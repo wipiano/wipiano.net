@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>今からできる、速くシンプルに LINQ を書くためのコツ 3 個 - wipiano.net</title>
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/10.5.0/styles/vs.min.css">
+    <script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/10.5.0/highlight.min.js"></script>
+    <script>hljs.initHighlightingOnLoad();</script>
+</head>
+<body>
+<header>
+    <div class="site-name"><a href="/index.html">wipiano.net</a></div>
+    <div class="menu-item-container">
+        <p><a href="/profile.html">プロフィール</a></p>
+        <p><a href="/math/index.html">数学</a></p>
+        <p><a href="/programming/index.html">プログラミング</a></p>
+        <p><a href="/diary/index.html">雑記</a></p>
+    </div>
+</header>
+<section id="article-body">
+    <h1>今からできる、速くシンプルに LINQ を書くためのコツ 3 個</h1>
+    <p class="date">2018.04.20</p>
+    <div class="text-container">
+        <p>たびたび 「LINQ が遅い」 と言われているのを見かけるので、どうやったら速く書けるのか、どう書くと遅くなるのかについてまとめてみます。<br/>
+            LINQ は非常に強力で、ぼくが出会った「LINQ 遅い」のほとんどは、 実装の仕方がまずいものばかりです。<br/>
+            LINQ はいくつかポイントを意識するだけでかなり安全に速く書けるようになります。<br/>
+            いろいろとポイントはありますが、 3 つだけに絞って書いてみました。</p>
+
+        <p>私自身 C# 書き始めてようやく 2 年たったぐらいなので、間違っているところはバシバシご指摘いただけると嬉しいです。</p>
+
+        <p>こちらの記事も参考になるので、合わせてご覧ください。</p>
+
+        <p><iframe src="https://hatenablog-parts.com/embed?url=http%3A%2F%2Fblog.okazuki.jp%2Fentry%2F2018%2F04%2F20%2F105738" title="LINQ を使う時に一般的に気を付けること via C#でLinqを使うよりPythonの方が2倍速かったのでベンチマークをしてみた - かずきのBlog@hatena" class="embed-card embed-blogcard" scrolling="no" frameborder="0" style="display: block; width: 100%; height: 190px; max-width: 500px; margin: 10px 0px;"></iframe><cite class="hatena-citation"><a href="http://blog.okazuki.jp/entry/2018/04/20/105738">blog.okazuki.jp</a></cite></p>
+
+        <h2>「LINQ 遅い」の 3 パターン</h2>
+
+        <p>まあ LINQ は速くないこともたまにあるのですが、大抵の場合は十分なパフォーマンスを提供してくれます。<br/>
+            「LINQ が遅い」 と言う時はだいたい以下のどれかかなと思います。</p>
+
+        <ol>
+            <li>よくわからないけどイメージで「遅そう」と言っている (要するに使いたくない、覚えたくない)</li>
+            <li>LINQ のしくみがよくわからず、誤った使い方、明らかに遅い書き方をしている (例: なんとなく <code>Count()</code>, <code>ToArray()</code> などしてしまう)</li>
+            <li>LINQ の内部実装をよく知っているプロフェッショナルが LINQ が適していない場合に「遅い」と言う</li>
+        </ol>
+
+
+        <p>1 の場合はどうにもできないです。 3 の場合は必要に応じて LINQ 以外の方法を取ることもできますし、 LINQ を使うと判断した場合は最も適切なメソッドを選んで使用できるので遅くなりません。プログラマとしてはここを目指したい。<br/>
+            問題は 2 の場合で、「なんとなく動くものは書けるけど遅い、どこが遅いのかよくわからない」というのが多いです。<br/>
+            今回は最も多いと思われる 2 のパターンをターゲットに書いていきます。</p>
+
+        <h2>1. 不用意に要素数を取得しない (Count メソッド)</h2>
+
+        <p>一番良く見かけるのがこれです。簡単に書けてしまいますが非常に危険です。</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink>IEnumerable&lt;Hoge&gt; source = <span class="synComment">// ...</span>
+
+<span class="synStatement">if</span> (source.Count() &gt; <span class="synConstant">0</span>)
+{
+    <span class="synComment">// 要素があるときの処理</span>
+}
+</pre>
+
+
+        <p><code>IEnumerable&lt;T&gt;</code> はカウントを持ちません。いくつ要素があるのかも全部列挙してみないとわかりません。 もしかしたら非常に長かったり、列挙におおきなコストがかかったり、無限につづくシーケンスでそもそもカウントできないかもしれません。<br/>
+            Count メソッドは基本的には 100 万個要素があったら 100 万個全部を 1 個ずつ列挙して数えていくため非常に遅く、ほとんどの場合に意図していない列挙を発生させます。<br/>
+            もちろん Count の前に <code>Select</code> や <code>Where</code> をかけていて、列挙の際になんらかの計算が発生するような場合にはその計算のコストもかかります。
+            実体が Count プロパティをもつコレクションである場合には Count プロパティの値を取得するような最適化は入っているものの、本当に「何個あるか知りたい時」以外使うべきでないです。</p>
+
+        <p><strong><code>source.Count() &gt; 0</code> と書くのであれば、代わりに <code>source.Any()</code> と書きましょう。</strong></p>
+
+        <p>「ある条件を満たす要素が n 個以上あるかどうかを判定したいとき」には下記のように Skip や Take を使用することで、一部だけの列挙におさえることができます。</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink>var filtered = source.Where(predicateFunc);
+
+<span class="synComment">// 列挙した要素を一切使わず、ただ n 個以上あることをたしかめたいとき</span>
+<span class="synComment">// 列挙したものを保存する必要がないのであれば、この方法で無駄な配列確保を避けられる</span>
+<span class="synStatement">if</span> (filtered.Skip(n - <span class="synConstant">1</span>).Any())
+{
+    <span class="synComment">// n 個あった時の処理</span>
+}
+
+<span class="synComment">// 列挙した要素を n 個使用するとき</span>
+<span class="synComment">// 複数回同じものに対しての列挙を避けるには、ToArray() が有効。</span>
+<span class="synComment">// ただし、 n が大きくなった場合、それだけ大きい配列が確保されるので注意。これは ToList() でも同様</span>
+var part = filtered.Take(n).ToArray();
+
+<span class="synStatement">if</span> (part.Length == n)
+{
+    <span class="synStatement">foreach</span> (var item <span class="synStatement">in</span> part)
+    {
+        <span class="synComment">// なにか処理</span>
+    }
+}
+</pre>
+
+
+        <h2>2. なんとなく配列やリストに突っ込まない。ライブラリを作るときはなるべく <code>IEnumerable&lt;T&gt;</code> で受ける。</h2>
+
+        <p><code>ToArray()</code> や <code>ToList()</code> は非常に便利なメソッドですが、ほとんどの場合 LINQ の途中で呼ぶ必要はありません。
+            たとえば、下記のような ToArray は意味がないばかりか、無駄な配列のためのメモリを確保してパフォーマンスを著しく低下させます。</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink>IEnumerable&lt;Hoge&gt; source = <span class="synComment">// ...</span>
+
+var array = source.ToArray() <span class="synComment">// むだな配列生成</span>
+    .Select(x =&gt; ごにょごにょ)
+    .Where(x =&gt; ごにょごにょ)
+    .Distinct()
+    .ToArray(); <span class="synComment">// むだな配列生成</span>
+
+<span class="synComment">// foreach するだけならむだな array はいらない</span>
+<span class="synStatement">foreach</span> (var x <span class="synStatement">in</span> array)
+{
+    <span class="synComment">// なにかする</span>
+}
+</pre>
+
+
+        <p>下記のように書いてもまったく動作上問題がなく、パフォーマンスがよくなります。</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink>IEnumerable&lt;Hoge&gt; source = <span class="synComment">// ...</span>
+
+var array = source
+    .Select(x =&gt; ごにょごにょ)
+    .Where(x =&gt; ごにょごにょ)
+    .Distinct();
+
+<span class="synComment">// foreach するだけならむだな array はいらない</span>
+<span class="synStatement">foreach</span> (var x <span class="synStatement">in</span> array)
+{
+    <span class="synComment">// なにかする</span>
+}
+</pre>
+
+
+        <p>また、配列である必要がないのに配列で引数を要求するメソッドを書くのはやめましょう。 <code>IEnumerable&lt;T&gt;</code> で受けましょう。
+            本当は 1 個ずつ処理するだけのメソッドなのに、渡す側で <code>ToArray()</code> して渡す必要があるのは無駄です。</p>
+
+        <h2>3. 巨大なファイルを 1 行ずつ処理するときも、リストはいらない。</h2>
+
+        <p>たとえば、こんなコードを書いたことはありませんか？これはほんとうに無駄なのでやめましょう。</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synComment">// 1 行ずつ処理したいけど、 LINQ つかうから IEnumerable&lt;T&gt; がほしい。 List&lt;T&gt; に Add していこう</span>
+
+List&lt;Hoge&gt; sourceList = <span class="synStatement">new</span> List&lt;Hoge&gt;();
+
+<span class="synStatement">using</span> (var reader = <span class="synStatement">new</span> StreamReader(stream))
+{
+    <span class="synType">string</span> line;
+    <span class="synStatement">while</span> ((line = reader.ReadLine()) != <span class="synConstant">null</span>
+    {
+        sourceList.Add(MapToHoge(line));
+    }
+}
+
+sourceList.Select(xxx).Where(xxx). <span class="synComment">// ...</span>
+</pre>
+
+
+        <p>こんなふうに書けば、一気に全部読んでしまう必要はまったくありません。</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink>IEnumerable&lt;Hoge&gt; Read()
+{
+    <span class="synStatement">using</span> (var reader = <span class="synStatement">new</span> StreamReader(stream))
+    {
+        <span class="synType">string</span> line;
+        <span class="synStatement">while</span> ((line = reader.ReadLine()) != <span class="synConstant">null</span>
+        {
+            <span class="synStatement">yield</span> <span class="synStatement">return</span> MapToHoge(line);
+        }
+    }
+}
+
+Read().Select(xxx).Where(xxx) <span class="synComment">// ...</span>
+</pre>
+
+
+        <p>あるいは、ファイルから読むことがわかっているならこれでも良いです。</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink>File.ReadLines(<span class="synConstant">&quot;filepath&quot;</span>)
+    .Select(xxx)
+    .Where(xxx)
+    . <span class="synComment">// ...</span>
+</pre>
+
+
+        <p>File.ReadAllLines メソッドもありますが、こちらはすべてを読んで配列に入れてから返してくるので気をつけましょう。巨大なファイルを読む場合に大量のメモリが必要になります。</p>
+
+        <h2>まとめ</h2>
+
+        <p>たくさん書きましたが、要するにおなじシーケンスに対しての複数回の列挙や、必要のないものの列挙、巨大なメモリ確保にもっと慎重になりましょうということです。<br/>
+            LINQ は遅延評価が基本ですが、誤った使い方をすればそのメリットを活かせないばかりか、非常に遅いコードが簡単に出来上がってしまいます。<br/>
+            遅いのは LINQ のバグでも、 .NET Core 開発チームの怠慢でも、マシンのスペックが足りないからでもなく、ただ遅くなるように書いたからです。そうでないこともありますが、だいたいそうです。</p>
+
+        <p>自分で書いたコードが遅かったり、すっきり書けなかったりして困ったときに、Qiita や twitter に投稿するといろんな人のアドバイスが受けられて楽しいです。<br/>
+            読む人にとってはその投稿についたコメントや、反応の記事のほうが役にたつことがたくさんありますが、最初の投稿がなければそれらの記事も生まれません。</p>
+
+        <p>LINQ の内部の実装を読むことは非常に勉強になります。<br/>
+            GitHub で .NET Core の完全な実装を読むことができます。<br/>
+            難しく見えるかもしれませんが、単純なもの、きになるものから読んでいくといいと思います。
+            また、簡単そうなメソッドを自分で書いてみるのも理解するには効果がありました。  <br/>
+            LINQ を書く際に気をつけることはこれがすべてではありませんが、ドキュメントやコードをきちんと読んだり、信頼できる先輩にアドバイスをもらったりしながらだんだんと身についていくものだと思います。</p>
+
+        <p><iframe src="https://hatenablog-parts.com/embed?url=https%3A%2F%2Fgithub.com%2Fdotnet%2Fcorefx%2Ftree%2Fmaster%2Fsrc%2FSystem.Linq%2Fsrc%2FSystem%2FLinq" title="dotnet/corefx" class="embed-card embed-webcard" scrolling="no" frameborder="0" style="display: block; width: 100%; height: 155px; max-width: 500px; margin: 10px 0px;"></iframe><cite class="hatena-citation"><a href="https://github.com/dotnet/corefx/tree/master/src/System.Linq/src/System/Linq">github.com</a></cite></p>
+
+        <p>あと、 ReSharper などのツールを入れると multiple enumeration の注意を出してくれたりもします。</p>
+
+        <p><iframe src="https://hatenablog-parts.com/embed?url=https%3A%2F%2Fwww.jetbrains.com%2Fresharper%2F" title="ReSharper: Visual Studio Extension for .NET Developers by JetBrains" class="embed-card embed-webcard" scrolling="no" frameborder="0" style="display: block; width: 100%; height: 155px; max-width: 500px; margin: 10px 0px;"></iframe><cite class="hatena-citation"><a href="https://www.jetbrains.com/resharper/">www.jetbrains.com</a></cite></p>
+
+        <p>（ReSharper は他にもいろいろなことを教えてくれる素晴らしい先生になるのでめちゃくちゃおすすめです）</p>
+
+        <h2>(おまけ) 記事を書いたきっかけ</h2>
+
+        <p>もともと微妙なコードをちょくちょく見かけていて、 LINQ ってそんなに難しいのかなーと思っていたのですが、  twitter で<br/>
+            <a href="https://qiita.com/yniji/items/6585011633289a257888">C#&#x3067;Linq&#x3092;&#x4F7F;&#x3046;&#x3088;&#x308A;Python&#x306E;&#x65B9;&#x304C;2&#x500D;&#x901F;&#x304B;&#x3063;&#x305F;&#x306E;&#x3067;&#x30D9;&#x30F3;&#x30C1;&#x30DE;&#x30FC;&#x30AF;&#x3092;&#x3057;&#x3066;&#x307F;&#x305F; - Qiita</a><br/>
+            という記事が回ってきました。</p>
+
+        <p>公開から短時間でいいねが複数ついていたことから、ほんとうは速くシンプルに書けるにもかかわらず、 LINQ が遅いと判断してしまう人は多いのではないかと思い、
+            急いで記事を書いている次第です (そもそもこのブログ自体そんなに見られてないのでどの程度効果があるかは疑問ですが)。</p>
+
+        <p>この記事の具体的な内容についてはもう十分他の方が指摘などされていると思いますので、ここでは細かく言及しません。
+            ただ、もし初心者の方が読まれる場合には下記の点だけは頭においてほしいです。</p>
+
+        <ol>
+            <li>(意図的にそうしているとは思いませんが、結果として) 検証用のコードが非常に遅くなるように書かれています。 検証用のコードを改善することでだいぶ速い結果になる、という記事がすでにあります。GroupBy が遅いように書かれていますが、それよりも 無駄な ToList 何度も呼んでいるめにループの回数が増えてしまっていることのほうがはるかに大きな問題です。<a href="https://qiita.com/Akira_Kido_N/items/d9519b05ccee6a67158f#_reference-565d72fbc101713ccd78">C# &#x306E; Linq &#x304C; python &#x306E;&#xFF12;&#x500D;&#x9045;&#x3044;&#x3001;&#x306F;&#x5618; - Qiita</a></li>
+            <li><code>Span&lt;T&gt;</code> に関しては用途が違うように思います。 Qiita の記事とは全く無関係ですが、 日本語で読める <code>Span&lt;T&gt;</code> の記事としては <a href="http://ufcpp.net/study/csharp/resource/span/">Span&lt;T&gt;&#x69CB;&#x9020;&#x4F53; - C# &#x306B;&#x3088;&#x308B;&#x30D7;&#x30ED;&#x30B0;&#x30E9;&#x30DF;&#x30F3;&#x30B0;&#x5165;&#x9580; | ++C++; // &#x672A;&#x78BA;&#x8A8D;&#x98DB;&#x884C; C</a> がとても参考になります。</li>
+            <li>実際には、LINQ に限らず .NET のパフォーマンスの改善や新機能の開発に多くの優秀なエンジニアが取り組んでいます。また、明らかに遅かったり問題があり、改善方法があることが本当にわかっているなら、 issue をあげたり、プルリクエストを送ってみたりする手段は誰にでも開かれています。
+                <a href="https://github.com/dotnet/corefx">GitHub - dotnet/corefx: This repo contains the .NET Core foundational libraries, called CoreFX. It includes classes for collections, file systems, console, XML, async and many others. We welcome contributions.</a></li>
+        </ol>
+
+
+        <p>BenchmarkDotnet を使って LINQ の部分のベンチマークをとってみたところ、標準の LINQ メソッドだけで 3 倍以上高速になりました。</p>
+
+        <p>SlowLinq が Qiita の元記事、 NormalLinq がそれを書き直したもの、 UseGroupSum が GroupBy を使わないものです。</p>
+
+        <table>
+            <thead>
+            <tr>
+                <th>      Method </th>
+                <th style="text-align:right;">      Mean </th>
+                <th style="text-align:right;"> Error </th>
+                <th style="text-align:right;">      Gen 0 </th>
+                <th style="text-align:right;">     Gen 1 </th>
+                <th style="text-align:right;">    Gen 2 </th>
+                <th style="text-align:right;">   Allocated </th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr>
+                <td>    SlowLinq </td>
+                <td style="text-align:right;"> 321.59 ms </td>
+                <td style="text-align:right;">    NA </td>
+                <td style="text-align:right;"> 12400.0000 </td>
+                <td style="text-align:right;"> 6200.0000 </td>
+                <td style="text-align:right;"> 800.0000 </td>
+                <td style="text-align:right;"> 78916.81 KB </td>
+            </tr>
+            <tr>
+                <td>  NormalLinq </td>
+                <td style="text-align:right;">  85.77 ms </td>
+                <td style="text-align:right;">    NA </td>
+                <td style="text-align:right;">  1400.0000 </td>
+                <td style="text-align:right;">  600.0000 </td>
+                <td style="text-align:right;">        - </td>
+                <td style="text-align:right;">  8415.32 KB </td>
+            </tr>
+            <tr>
+                <td> UseGroupSum </td>
+                <td style="text-align:right;">  62.12 ms </td>
+                <td style="text-align:right;">    NA </td>
+                <td style="text-align:right;">          - </td>
+                <td style="text-align:right;">         - </td>
+                <td style="text-align:right;">        - </td>
+                <td style="text-align:right;">   147.43 KB </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+</section>
+</body>
+</html>

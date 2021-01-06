@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>C# の ref まとめ - wipiano.net</title>
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/10.5.0/styles/vs.min.css">
+    <script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/10.5.0/highlight.min.js"></script>
+    <script>hljs.initHighlightingOnLoad();</script>
+</head>
+<body>
+<header>
+    <div class="site-name"><a href="/index.html">wipiano.net</a></div>
+    <div class="menu-item-container">
+        <p><a href="/profile.html">プロフィール</a></p>
+        <p><a href="/math/index.html">数学</a></p>
+        <p><a href="/programming/index.html">プログラミング</a></p>
+        <p><a href="/diary/index.html">雑記</a></p>
+    </div>
+</header>
+<section id="article-body">
+    <h1>C# の ref まとめ</h1>
+    <p class="date">2018.02.21</p>
+    <div class="text-container">
+        <p>C#7.2 までの参照渡し関係のまとめです。</p>
+
+        <p>C# 7 系で参照渡しの扱いが強化されて種類も増えました。
+            上手につかうとサイズの大きい値型のコピーを避けられるのでまとめてみました。
+            動作をきちんと理解するために C# to C# の変換をしたコードや IL をのせています。</p>
+
+        <h2>予備知識 - defensive copy, readonly struct</h2>
+
+        <h3>defensive copy - 防衛的なコピー</h3>
+
+        <p>readonly 指定された値型は値が変化しないことを保証するために、コンパイラが値を防衛的にコピーしている場合がある。</p>
+
+        <p>defensive copy が発生するのは下記の場合に、後述する readonly struct ではないふつうの struct を使用しているとき</p>
+
+        <ul>
+            <li>readonly フィールドとして構造体を持っている場合</li>
+            <li>readonly な参照渡しで構造体を返すとき</li>
+        </ul>
+
+
+        <h4>例</h4>
+
+        <p>こんな構造体があった場合</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synType">public</span> <span class="synType">struct</span> Point
+{
+    <span class="synType">public</span> <span class="synType">double</span> X;
+    <span class="synType">public</span> <span class="synType">double</span> Y;
+
+    <span class="synComment">// フィールドを書き換えるメソッド</span>
+    <span class="synType">public</span> <span class="synType">void</span> Set(<span class="synType">double</span> x, <span class="synType">double</span> y)
+    {
+        X = x;
+        Y = y;
+    }
+}
+</pre>
+
+
+        <h5>readonly フィールドでない場合</h5>
+
+        <p>たとえば、このようなクラスでは防御的コピーは発生しない（readonly でないので、構造体のフィールドを書き換えることに制限はない）</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synType">public</span> <span class="synType">static</span> <span class="synType">class</span> MyClass
+{
+    <span class="synComment">// readonly でないフィールド</span>
+    <span class="synType">private</span> <span class="synType">static</span> Point s_origin = <span class="synStatement">default</span>;
+
+    <span class="synType">public</span> <span class="synType">static</span> <span class="synType">void</span> Sample()
+    {
+        <span class="synComment">// フィールド書き換え</span>
+        s_origin.Set(<span class="synConstant">1</span>, <span class="synConstant">1</span>);
+
+        <span class="synComment">// 実際に書き換わっている</span>
+        Console.WriteLine($<span class="synConstant">&quot;X: {s_origin.X}, Y: {s_origin.Y}&quot;</span>);
+    }
+}
+</pre>
+
+
+        <p>IL を見ると、こんな感じ</p>
+
+        <pre class="code ca65" data-lang="ca65" data-unlink>MyClass.Sample:
+IL_0000:  nop
+
+; s_origin の「アドレス」をスタックに push
+IL_0001:  ldsflda     MyClass.s_origin
+
+; set メソッドの呼び出し
+IL_0006:  ldc.r8      00 00 00 00 00 00 F0 3F
+IL_000F:  ldc.r8      00 00 00 00 00 00 F0 3F
+IL_0018:  call        Point.Set
+IL_001D:  nop         </pre>
+
+
+        <h5>readonly フィールドの場合</h5>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synType">public</span> <span class="synType">static</span> <span class="synType">class</span> MyClass
+{
+    <span class="synComment">// 原点の座標を何度も使うので readonly フィールドにもつ</span>
+    <span class="synType">private</span> <span class="synType">static</span> <span class="synType">readonly</span> Point s_origin = <span class="synStatement">default</span>;
+
+    <span class="synType">public</span> <span class="synType">static</span> <span class="synType">void</span> Sample()
+    {
+        <span class="synComment">// 構造体のフィールドは readonly を受け継ぐので書き換えできない</span>
+        <span class="synComment">// s_origin.X = 1;</span>
+
+        <span class="synComment">// フィールドを書き換えるかもしれないメソッドは呼べるように見える</span>
+        s_origin.Set(<span class="synConstant">1</span>, <span class="synConstant">1</span>);
+
+        <span class="synComment">// 実際には書き換わっていない</span>
+        Console.WriteLine($<span class="synConstant">&quot;X: {s_origin.X}, Y: {s_origin.Y}&quot;</span>);
+    }
+}
+</pre>
+
+
+        <p>s_origin.Set() メソッド読んでもフィールドが書き換わっていないが、
+            これは（フィールドを変更しているかもしれない）メソッド呼び出しを許容しつつ、readonly であることを保証するために、いったん s_origin をコピーしてから、そのコピーに対してメソッドを呼ぶため。</p>
+
+        <p>「メソッドの中でなにも書き換えていない」ことは呼び出し側から知るすべがないので、実際にコピーが必要かどうかにかかわらず常にコピーが発生する。
+            readonly なフィールドや readonly な参照 (in 引数) を使用するときは注意が必要。</p>
+
+        <p>IL をみると、ローカル変数に値をコピーしてからメソッドを読んでいる</p>
+
+        <pre class="code ca65" data-lang="ca65" data-unlink>MyClass.Sample:
+IL_0000:  nop
+; 値をローカル変数にコピー
+IL_0001:  ldsfld     MyClass.s_origin
+IL_0006:  stloc.0
+
+; ローカル変数のアドレスをスタックに push
+IL_0007:  ldloca.s    00
+
+; ローカル変数にたいして Set() を呼ぶ
+IL_0009:  ldc.r8      00 00 00 00 00 00 F0 3F
+IL_0012:  ldc.r8      00 00 00 00 00 00 F0 3F
+IL_001B:  call        Point.Set
+IL_0020:  nop         </pre>
+
+
+        <h3>readonly struct</h3>
+
+        <p>防衛的なコピーは、下記のようにすべてのフィールドを readonly にしていても発生する。</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synType">struct</span> NoReadOnlyPoint
+{
+    <span class="synComment">// X, Y は readonly</span>
+    <span class="synType">public</span> <span class="synType">readonly</span> <span class="synType">double</span> X;
+    <span class="synType">public</span> <span class="synType">readonly</span> <span class="synType">double</span> Y;
+
+    <span class="synComment">// フィールドや this の書き換えを行うメソッドは持たないが、</span>
+    <span class="synComment">// 呼び出し側からはフィールドの書き換えを行っていないことを知るすべがないため、</span>
+    <span class="synComment">// readonly な NoReadOnlyPoint のインスタンスに対して Hoge() を呼ぶと、常に defensive copy が発生する</span>
+    <span class="synType">public</span> <span class="synType">void</span> Hoge()
+    {
+        <span class="synComment">// ...</span>
+    }
+}
+</pre>
+
+
+        <p>下記のように readonly struct とすることによって、フィールドの書き換えが起こらないことを保証でき、 defensive copy を避けられる</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synType">readonly</span> <span class="synType">struct</span> ReadOnlyPoint
+{
+    <span class="synComment">// readonly なフィールドのみ許容される</span>
+    <span class="synComment">// get-only プロパティも、結局 readonly フィールドを生成するので許容</span>
+    <span class="synType">public</span> <span class="synType">readonly</span> <span class="synType">double</span> X;
+    <span class="synType">public</span> <span class="synType">readonly</span> <span class="synType">double</span> Y;
+
+    <span class="synComment">// フィールドや this の書き換えを行うメソッドは持てないので、</span>
+    <span class="synComment">// 呼び出し側で defensive copy の必要がない</span>
+    <span class="synType">public</span> <span class="synType">void</span> Hoge()
+    {
+        <span class="synComment">// ...</span>
+    }
+}
+</pre>
+
+
+        <h3>呼び出し例</h3>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synType">public</span> <span class="synType">static</span> <span class="synType">class</span> MyClass
+{
+    <span class="synComment">// 原点の座標を何度も使うので readonly フィールドにもつ</span>
+    <span class="synType">private</span> <span class="synType">static</span> <span class="synType">readonly</span> NoReadOnlyPoint s_noReadonlyOrigin = <span class="synStatement">default</span>;
+    <span class="synType">private</span> <span class="synType">static</span> <span class="synType">readonly</span> ReadOnlyPoint s_readonlyOrigin = <span class="synStatement">default</span>;
+
+    <span class="synType">public</span> <span class="synType">static</span> <span class="synType">void</span> Sample()
+    {
+        <span class="synComment">// 防衛的なコピーが発生</span>
+        s_noReadonlyOrigin.Hoge();
+
+        <span class="synComment">// 防衛的なコピーが発生しない</span>
+        s_readonlyOrigin.Hoge();
+    }
+}
+</pre>
+
+
+        <h4>IL</h4>
+
+        <pre class="code" data-lang="" data-unlink>MyClass.Sample:
+IL_0000:  nop
+
+// readonly struct でない場合はコピーが発生
+IL_0001:  ldsfld      MyClass.s_noReadonlyOrigin
+IL_0006:  stloc.0
+IL_0007:  ldloca.s    00
+IL_0009:  call        NoReadOnlyPoint.Hoge
+IL_000E:  nop
+
+// readonly struct の場合はコピーが発生しない
+IL_000F:  ldsflda     MyClass.s_readonlyOrigin
+IL_0014:  call        ReadOnlyPoint.Hoge
+IL_0019:  nop
+IL_001A:  ret    </pre>
+
+
+        <h4>生成される C# コード</h4>
+
+        <p><code>readonly struct</code> にした構造体には、コンパイラが <code>[IsReadOnly]</code> 属性をつける</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink>[IsReadOnly]
+<span class="synType">private</span> <span class="synType">struct</span> ReadOnlyPoint
+{
+    <span class="synType">public</span> <span class="synType">readonly</span> <span class="synType">double</span> X;
+    <span class="synType">public</span> <span class="synType">readonly</span> <span class="synType">double</span> Y;
+    <span class="synType">public</span> <span class="synType">void</span> Hoge()
+    {
+    }
+}
+</pre>
+
+
+        <p>この属性によって readonly struct かどうかの判定をおこなうようだ</p>
+
+        <h2>参照渡しの種類一覧</h2>
+
+        <table>
+            <thead>
+            <tr>
+                <th>種類</th>
+                <th>使う場所</th>
+                <th style="text-align:center;">書き換え</th>
+                <th style="text-align:right;">C#のバージョン</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr>
+                <td>ref parameters</td>
+                <td>引数</td>
+                <td style="text-align:center;">o</td>
+                <td style="text-align:right;">1.0?</td>
+            </tr>
+            <tr>
+                <td>out parameters</td>
+                <td>引数</td>
+                <td style="text-align:center;">o</td>
+                <td style="text-align:right;">1.0?</td>
+            </tr>
+            <tr>
+                <td>in parameters</td>
+                <td>引数</td>
+                <td style="text-align:center;">x</td>
+                <td style="text-align:right;">7.2</td>
+            </tr>
+            <tr>
+                <td>ref returns</td>
+                <td>戻り値</td>
+                <td style="text-align:center;">o</td>
+                <td style="text-align:right;">7.0</td>
+            </tr>
+            <tr>
+                <td>ref returns (readonly)</td>
+                <td>戻り値</td>
+                <td style="text-align:center;">x</td>
+                <td style="text-align:right;">7.2</td>
+            </tr>
+            <tr>
+                <td>ref locals</td>
+                <td>ローカル変数</td>
+                <td style="text-align:center;">o</td>
+                <td style="text-align:right;">7.0</td>
+            </tr>
+            <tr>
+                <td>ref locals (readonly)</td>
+                <td>ローカル変数</td>
+                <td style="text-align:center;">x</td>
+                <td style="text-align:right;">7.2</td>
+            </tr>
+            </tbody>
+        </table>
+
+
+        <h2>参照引数</h2>
+
+        <h3>ref parameters</h3>
+
+        <p>読み書き両方できる参照渡しの引数。
+            渡す前にかならず初期化が必要</p>
+
+        <p>x と y を交換するメソッドの例:</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synType">void</span> Main()
+{
+    <span class="synComment">// 必ず初期化しておく</span>
+    <span class="synType">int</span> x = <span class="synConstant">1</span>;
+    <span class="synType">int</span> y = <span class="synConstant">2</span>;
+
+    Swap(<span class="synStatement">ref</span> x, <span class="synStatement">ref</span> y); <span class="synComment">// x: 2, y: 1</span>
+}
+
+<span class="synType">public</span> <span class="synType">static</span> <span class="synType">void</span> Swap&lt;T&gt;(<span class="synStatement">ref</span> T x, <span class="synStatement">ref</span> T y)
+{
+    T tmp = x;
+    x = y;
+    y = tmp;
+}
+</pre>
+
+
+        <h3>out parameters</h3>
+
+        <p>出力用の参照引数。
+            渡す前に初期化が不要、 C# 7 では out-var で変数の宣言と同時に受け取れる</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synType">void</span> Main()
+{
+    var list = <span class="synStatement">new</span> List&lt;<span class="synType">int</span>&gt;() { <span class="synConstant">1</span>, <span class="synConstant">2</span>, <span class="synConstant">3</span>, <span class="synConstant">4</span> };
+
+    <span class="synComment">// 出力引数のうけとり</span>
+    <span class="synComment">// C#7 からは 受けとりと同時に変数の宣言が可能</span>
+    <span class="synStatement">if</span> (TryGetAt(list, <span class="synConstant">1</span>, <span class="synStatement">out</span> var elem))
+    {
+        Console.WriteLine(elem);
+    }
+    <span class="synStatement">else</span>
+    {
+        Console.WriteLine(<span class="synConstant">&quot;not found&quot;</span>);
+    }
+}
+
+<span class="synComment">// IList&lt;T&gt; の指定したインデックスの値を返す</span>
+<span class="synType">private</span> <span class="synType">static</span> <span class="synType">bool</span> TryGetAt&lt;T&gt;(IList&lt;T&gt; list, <span class="synType">int</span> index, <span class="synStatement">out</span> T elem)
+{
+    <span class="synStatement">if</span> (list.Count &gt; index)
+    {
+        <span class="synComment">// out 引数に結果を入れる</span>
+        elem = list[index];
+        <span class="synStatement">return</span> <span class="synConstant">true</span>;
+    }
+    <span class="synStatement">else</span>
+    {
+        <span class="synComment">// out 引数は必ず初期化しなければならない</span>
+        elem = <span class="synStatement">default</span>;
+        <span class="synStatement">return</span> <span class="synConstant">false</span>;
+    }
+}
+</pre>
+
+
+        <h3>in parameters</h3>
+
+        <p>読み取り専用の参照渡し引数。
+            値渡しで発生する構造体のコピーを避けつつ、 ref で参照渡ししたときの書き換えのリスクもなくす。
+            ただし、予備知識に書いたとおり、 readonly struct でない値型を受け取ったときに、プロパティやメソッドの呼び出しを行うと無条件にコピーが発生するので注意。</p>
+
+        <p>例:</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synStatement">using</span> System;
+
+<span class="synType">public</span> <span class="synType">class</span> Program
+{
+    <span class="synType">static</span> <span class="synType">void</span> F(<span class="synStatement">in</span> <span class="synType">int</span> x)
+    {
+        <span class="synComment">// 読み取り可能</span>
+        Console.WriteLine(x);
+
+        <span class="synComment">// 書き換えようとするとコンパイル エラー</span>
+        x = <span class="synConstant">2</span>;
+    }
+
+    <span class="synComment">// 補足: in 引数はオプションにもできる</span>
+    <span class="synType">static</span> <span class="synType">void</span> G(<span class="synStatement">in</span> <span class="synType">int</span> x = <span class="synConstant">1</span>)
+    {
+    }
+
+    <span class="synType">static</span> <span class="synType">void</span> Main()
+    {
+        <span class="synType">int</span> x = <span class="synConstant">1</span>;
+
+        <span class="synComment">// ref 引数と違って修飾不要</span>
+        F(x);
+
+        <span class="synComment">// 明示的に in と付けてもいい</span>
+        F(<span class="synStatement">in</span> x);
+
+        <span class="synComment">// リテラルに対しても呼べる</span>
+        F(<span class="synConstant">10</span>);
+
+        <span class="synComment">// 右辺値(式の計算結果)に対しても呼べる</span>
+        <span class="synType">int</span> y = <span class="synConstant">2</span>;
+        F(x + y);
+
+        <span class="synComment">// in のオプション引数を省略した呼び出し</span>
+        G();
+    }
+}
+</pre>
+
+
+        <p>コンパイル後は結局は ref に変換される</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synStatement">using</span> System;
+<span class="synStatement">using</span> System.Runtime.CompilerServices;
+<span class="synType">public</span> <span class="synType">class</span> Program
+{
+    <span class="synComment">// [IsReadOnly] がついた ref になる</span>
+    <span class="synType">private</span> <span class="synType">static</span> <span class="synType">void</span> F([IsReadOnly] <span class="synStatement">ref</span> <span class="synType">int</span> x)
+    {
+        <span class="synComment">// 読み取り可能</span>
+        Console.WriteLine(x);
+    }
+
+    <span class="synType">private</span> <span class="synType">static</span> <span class="synType">void</span> G([IsReadOnly] <span class="synStatement">ref</span> <span class="synType">int</span> x = <span class="synConstant">1</span>)
+    {
+    }
+
+    <span class="synType">private</span> <span class="synType">static</span> <span class="synType">void</span> Main()
+    {
+        <span class="synComment">// in で修飾してもしなくても結局ただの ref になる</span>
+        <span class="synType">int</span> num = <span class="synConstant">1</span>;
+        Program.F(<span class="synStatement">ref</span> num);
+        Program.F(<span class="synStatement">ref</span> num);
+
+        <span class="synComment">// リテラルに対しての呼び出しは ローカル変数が作られて、その参照が渡される</span>
+        <span class="synType">int</span> num2 = <span class="synConstant">10</span>;
+        Program.F(<span class="synStatement">ref</span> num2);
+
+        <span class="synComment">// 式の計算結果に対して呼ぶ場合は先に式の計算結果をローカル変数に入れておいて、その参照が渡される</span>
+        <span class="synType">int</span> num3 = <span class="synConstant">2</span>;
+        num2 = num + num3;
+        Program.F(<span class="synStatement">ref</span> num2);
+
+        <span class="synComment">// オプション引数を省略した場合は、デフォルト値の参照が渡される</span>
+        num2 = <span class="synConstant">1</span>;
+        Program.G(<span class="synStatement">ref</span> num2);
+    }
+}
+</pre>
+
+
+        <p>(<a href="http://ufcpp.net/study/csharp/sp_ref.html?p=1#in">サンプルコードはこちらから引用させていただきました</a>)</p>
+
+        <h2>参照戻り値、参照ローカル変数</h2>
+
+        <p>C# 7 から、戻り値とローカル変数にも参照渡しが使えるようになった。
+            C# 7.2 からは readonly な参照を返すこともできる</p>
+
+        <p>readonly でない ref returns では、readonly なフィールドを返すことはできない（書き換えられるため）
+            readonly な ref returns では、 readonly なフィールドを返せる。</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synStatement">using</span> System;
+<span class="synType">public</span> <span class="synType">class</span> Program
+{
+    <span class="synType">public</span> <span class="synType">void</span> Sample()
+    {
+        var user = <span class="synStatement">new</span> User(<span class="synConstant">&quot;hanako&quot;</span>);
+
+        <span class="synComment">// 書き換えできる参照</span>
+        <span class="synStatement">ref</span> var mutableId = <span class="synStatement">ref</span> user.MutableId;
+        mutableId = Guid.NewGuid();
+
+        <span class="synComment">// 書き換えできない参照</span>
+        <span class="synStatement">ref</span> <span class="synType">readonly</span> var immutableId = <span class="synStatement">ref</span> user.ImmutableId;
+        <span class="synComment">// immutableId = Guid.NewGuid(); // 代入できない</span>
+
+        <span class="synComment">// これは値渡し</span>
+        var idValue = user.Id;
+        var idValue2 = user.MutableId;
+        var idValue3 = user.ImmutableId;
+    }
+}
+
+<span class="synType">public</span> <span class="synType">class</span> User
+{
+    <span class="synType">private</span> Guid _id;
+    <span class="synType">public</span> <span class="synType">string</span> Name { get; }
+
+    <span class="synComment">// これは値渡し</span>
+    <span class="synType">public</span> Guid Id =&gt; _id;
+
+    <span class="synComment">// 書き換えできる参照を返す</span>
+    <span class="synType">public</span> <span class="synStatement">ref</span> Guid MutableId =&gt; <span class="synStatement">ref</span> _id;
+
+    <span class="synComment">// readonly な参照を返す</span>
+    <span class="synType">public</span> <span class="synStatement">ref</span> <span class="synType">readonly</span> Guid ImmutableId =&gt; <span class="synStatement">ref</span> _id;
+
+    <span class="synType">public</span> User(<span class="synType">string</span> name)
+    {
+        _id = Guid.NewGuid();
+        Name = name;
+    }
+}
+</pre>
+
+
+        <p>コンパイルすると、 readonly でも readonly でなくてもどちらも同じコードになる (<code>IsReadOnlyAttribute</code> がつく)。
+            ポインタをつかった unsafe コードが生成される。</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synStatement">using</span> System;
+<span class="synStatement">using</span> System.Diagnostics;
+<span class="synStatement">using</span> System.Reflection;
+<span class="synStatement">using</span> System.Runtime.CompilerServices;
+<span class="synStatement">using</span> System.Security;
+<span class="synStatement">using</span> System.Security.Permissions;
+
+[assembly: AssemblyVersion(<span class="synConstant">&quot;0.0.0.0&quot;</span>)]
+[assembly: Debuggable(DebuggableAttribute.DebuggingModes.Default | DebuggableAttribute.DebuggingModes.DisableOptimizations | DebuggableAttribute.DebuggingModes.IgnoreSymbolStoreSequencePoints | DebuggableAttribute.DebuggingModes.EnableEditAndContinue)]
+[assembly: CompilationRelaxations(<span class="synConstant">8</span>)]
+[assembly: RuntimeCompatibility(WrapNonExceptionThrows = <span class="synConstant">true</span>)]
+[assembly: SecurityPermission(SecurityAction.RequestMinimum, SkipVerification = <span class="synConstant">true</span>)]
+[module: UnverifiableCode]
+<span class="synType">public</span> <span class="synType">class</span> Program
+{
+    <span class="synType">public</span> <span class="synStatement">unsafe</span> <span class="synType">void</span> Sample()
+    {
+        User user = <span class="synStatement">new</span> User(<span class="synConstant">&quot;hanako&quot;</span>);
+        Guid* mutableId = user.MutableId;
+        *mutableId = Guid.NewGuid();
+        Guid* immutableId = user.ImmutableId;
+        Guid id = user.Id;
+        Guid guid = *user.MutableId;
+        Guid guid2 = *user.ImmutableId;
+    }
+}
+<span class="synType">public</span> <span class="synType">class</span> User
+{
+    <span class="synType">private</span> Guid _id;
+
+    [DebuggerBrowsable(DebuggerBrowsableState.Never), CompilerGenerated]
+    <span class="synType">private</span> <span class="synType">readonly</span> <span class="synType">string</span> &lt;Name&gt;k__BackingField;
+
+    <span class="synType">public</span> <span class="synType">string</span> Name
+    {
+        [CompilerGenerated]
+        <span class="synStatement">get</span>
+        {
+            <span class="synStatement">return</span> <span class="synStatement">this</span>.&lt;Name&gt;k__BackingField;
+        }
+    }
+
+    <span class="synType">public</span> Guid Id
+    {
+        <span class="synStatement">get</span>
+        {
+            <span class="synStatement">return</span> <span class="synStatement">this</span>._id;
+        }
+    }
+
+    <span class="synType">public</span> <span class="synStatement">unsafe</span> Guid* MutableId
+    {
+        <span class="synStatement">get</span>
+        {
+            <span class="synStatement">return</span> <span class="synStatement">ref</span> <span class="synStatement">this</span>._id;
+        }
+    }
+
+    [IsReadOnly]
+    <span class="synType">public</span> <span class="synStatement">unsafe</span> Guid* ImmutableId
+    {
+        [<span class="synStatement">return</span>: IsReadOnly]
+        <span class="synStatement">get</span>
+        {
+            <span class="synStatement">return</span> <span class="synStatement">ref</span> <span class="synStatement">this</span>._id;
+        }
+    }
+
+    <span class="synType">public</span> User(<span class="synType">string</span> name)
+    {
+        <span class="synStatement">this</span>._id = Guid.NewGuid();
+        <span class="synStatement">this</span>.&lt;Name&gt;k__BackingField = name;
+    }
+}
+</pre>
+
+
+        <h2>参考</h2>
+
+        <ul>
+            <li><a href="https://blogs.msdn.microsoft.com/mazhou/2017/11/21/c-7-series-part-6-read-only-structs/">C# 7 Series, Part 6: Read-only structs - Mark Zhou's Tech Blog</a></li>
+            <li><a href="https://blogs.msdn.microsoft.com/mazhou/2017/12/12/c-7-series-part-7-ref-returns/">C# 7 Series, Part 7: Ref Returns - Mark Zhou's Tech Blog</a></li>
+            <li><a href="https://blogs.msdn.microsoft.com/mazhou/2018/01/08/c-7-series-part-8-in-parameters/">C# 7 Series, Part 8: “in” Parameters - Mark Zhou's Tech Blog</a></li>
+            <li><a href="http://ufcpp.net/study/csharp/sp_ref.html">参照渡し - C# によるプログラミング入門 | ++C++; // 未確認飛行 C</a></li>
+            <li><a href="http://ufcpp.net/study/csharp/resource/readonlyness/">readonly の注意点 - C# によるプログラミング入門 | ++C++; // 未確認飛行 C</a></li>
+            <li><a href="https://docs.microsoft.com/en-us/dotnet/csharp/whats-new/csharp-7">What's New in C# 7 - C# Guide | Microsoft Docs</a></li>
+            <li><a href="https://docs.microsoft.com/en-us/dotnet/csharp/whats-new/csharp-7-2">What's new in C# 7.2 | Microsoft Docs</a></li>
+            <li><a href="https://docs.microsoft.com/en-us/dotnet/csharp/reference-semantics-with-value-types">Reference semantics with value types | Microsoft Docs</a></li>
+        </ul>
+
+
+        <h3>関連: <code>Span&lt;T&gt;</code></h3>
+
+        <ul>
+            <li><a href="http://ufcpp.net/study/csharp/resource/span/">Span<T>構造体 - C# によるプログラミング入門 | ++C++; // 未確認飛行 C</a></li>
+            <li><a href="http://ufcpp.net/study/csharp/resource/refstruct/">ref構造体 - C# によるプログラミング入門 | ++C++; // 未確認飛行 C</a></li>
+        </ul>
+    </div>
+</section>
+</body>
+</html>

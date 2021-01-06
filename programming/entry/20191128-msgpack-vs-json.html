@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>C# で messagepack vs json 比較 - wipiano.net</title>
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/10.5.0/styles/vs.min.css">
+    <script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/10.5.0/highlight.min.js"></script>
+    <script>hljs.initHighlightingOnLoad();</script>
+</head>
+<body>
+<header>
+    <div class="site-name"><a href="/index.html">wipiano.net</a></div>
+    <div class="menu-item-container">
+        <p><a href="/profile.html">プロフィール</a></p>
+        <p><a href="/math/index.html">数学</a></p>
+        <p><a href="/programming/index.html">プログラミング</a></p>
+        <p><a href="/diary/index.html">雑記</a></p>
+    </div>
+</header>
+<section id="article-body">
+    <h1>C# で messagepack vs json 比較</h1>
+    <p class="date">2019.11.28</p>
+    <div class="text-container">
+        <p>Messagepack の良さを社内に布教するためにベンチマークを取ったので転載しておく。</p>
+
+        <p>個人的には MessagePack + LZ4 の Typeless がおすすめ。
+            messagepack は可読性が・・・と言われることが多いけど、 Typeless なシリアライズなら型情報がつくので、 dynamic にデシリアライズして json を吐くような小さいツールさえ作っておけば gzip 圧縮した json とそこまで使い勝手は変わらないのでは？と思う。
+            パフォーマンスの面では messagepack が有利。json + gzip はファイルサイズは小さくなったけど、パフォーマンスが許容できるかどうか。</p>
+
+        <p>ベンチマークに使ったコードは <a href="https://github.com/wipiano/benchmark-json-vs-msgpack-csharp">こちら</a></p>
+
+        <h2>ファイルサイズ</h2>
+
+        <pre class="code" data-lang="" data-unlink>json:                     137,248,217 bytes
+json + gzip:              045,170,640 bytes
+msgpack:                  084,959,431 bytes
+msgpack + lz4:            061,381,468 bytes
+msgpack (typeless):       083,949,384 bytes
+msgpack (typeless) + lz4: 060,776,211 bytes</pre>
+
+
+        <h2>パフォーマンス</h2>
+
+        <pre class="code" data-lang="" data-unlink>BenchmarkDotNet=v0.12.0, OS=ubuntu 19.04
+Intel Core i7-8700 CPU 3.20GHz (Coffee Lake), 1 CPU, 12 logical and 6 physical cores
+.NET Core SDK=3.0.100
+  [Host]   : .NET Core 3.0.0 (CoreCLR 4.700.19.46205, CoreFX 4.700.19.46214), X64 RyuJIT
+  ShortRun : .NET Core 3.0.0 (CoreCLR 4.700.19.46205, CoreFX 4.700.19.46214), X64 RyuJIT
+
+Job=ShortRun  IterationCount=3  LaunchCount=1
+WarmupCount=3  </pre>
+
+
+
+
+        <pre class="code" data-lang="" data-unlink>|                 Method |       Mean |     Error |   StdDev | Ratio | RatioSD |     Gen 0 |     Gen 1 |     Gen 2 | Allocated | Completed Work Items | Lock Contentions |
+|----------------------- |-----------:|----------:|---------:|------:|--------:|----------:|----------:|----------:|----------:|---------------------:|-----------------:|
+|       Utf8JsonWithType | 1,001.4 ms | 337.02 ms | 18.47 ms |  1.00 |    0.00 | 1000.0000 | 1000.0000 |         - | 642.99 MB |               3.0000 |                - |
+|     Utf8JsonWithTypeGz | 4,134.0 ms | 987.83 ms | 54.15 ms |  4.13 |    0.13 | 7000.0000 | 7000.0000 | 2000.0000 | 814.09 MB |               3.0000 |                - |
+|       Utf8JsonTypeless |   984.2 ms |  50.38 ms |  2.76 ms |  0.98 |    0.02 | 1000.0000 | 1000.0000 |         - | 642.99 MB |               2.0000 |                - |
+|     Utf8JsonTypelessGz | 4,194.6 ms | 777.21 ms | 42.60 ms |  4.19 |    0.04 | 7000.0000 | 7000.0000 | 2000.0000 | 814.08 MB |               3.0000 |                - |
+|    MessagePackWithType |   390.3 ms | 231.84 ms | 12.71 ms |  0.39 |    0.02 |         - |         - |         - |  336.9 MB |               2.0000 |                - |
+| MessagePackWithTypeLz4 |   537.4 ms |  66.94 ms |  3.67 ms |  0.54 |    0.01 | 2000.0000 | 2000.0000 |         - | 395.79 MB |               2.0000 |                - |
+|    MessagePackTypeless |   368.1 ms |   2.59 ms |  0.14 ms |  0.37 |    0.01 |         - |         - |         - | 335.94 MB |               2.0000 |                - |
+| MessagePackTypelessLz4 |   515.2 ms |  75.83 ms |  4.16 ms |  0.51 |    0.01 | 2000.0000 | 2000.0000 |         - | 394.22 MB |               2.0000 |                - |
+</pre>
+
+
+
+
+        <pre class="code" data-lang="" data-unlink>// * Legends *
+  Mean                 : Arithmetic mean of all measurements
+  Error                : Half of 99.9% confidence interval
+  StdDev               : Standard deviation of all measurements
+  Ratio                : Mean of the ratio distribution ([Current]/[Baseline])
+  RatioSD              : Standard deviation of the ratio distribution ([Current]/[Baseline])
+  Gen 0                : GC Generation 0 collects per 1000 operations
+  Gen 1                : GC Generation 1 collects per 1000 operations
+  Gen 2                : GC Generation 2 collects per 1000 operations
+  Allocated            : Allocated memory per single operation (managed only, inclusive, 1KB = 1024B)
+  Completed Work Items : The number of work items that have been processed in ThreadPool (per single operation)
+  Lock Contentions     : The number of times there was contention upon trying to take a Monitor&#39;s lock (per single operation)
+  1 ms                 : 1 Millisecond (0.001 sec)</pre>
+    </div>
+</section>
+</body>
+</html>

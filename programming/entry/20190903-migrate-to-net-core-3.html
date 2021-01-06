@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>.NET Core 3.0 移行のハマりポイントまとめ - wipiano.net</title>
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/10.5.0/styles/vs.min.css">
+    <script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/10.5.0/highlight.min.js"></script>
+    <script>hljs.initHighlightingOnLoad();</script>
+</head>
+<body>
+<header>
+    <div class="site-name"><a href="/index.html">wipiano.net</a></div>
+    <div class="menu-item-container">
+        <p><a href="/profile.html">プロフィール</a></p>
+        <p><a href="/math/index.html">数学</a></p>
+        <p><a href="/programming/index.html">プログラミング</a></p>
+        <p><a href="/diary/index.html">雑記</a></p>
+    </div>
+</header>
+<section id="article-body">
+    <h1>.NET Core 3.0 移行のハマりポイントまとめ</h1>
+    <p class="date">2019.09.03</p>
+    <div class="text-container">
+        <p>プロダクションで稼働している .NET Core 2.2 (ASP.NET Core 2.2) のシステムを .NET Core 3.0-preview8 に全移行したときのハマりポイントのまとめです。</p>
+
+        <p><a href="https://docs.microsoft.com/ja-jp/aspnet/core/migration/22-to-30?view=aspnetcore-2.2&amp;tabs=visual-studio">公式の移行手順</a>で説明が無いものを中心にのせています。</p>
+
+        <h2>移行前のシステム</h2>
+
+        <ul>
+            <li>ASP.NET Core 2.2 on EC2 (linux)</li>
+            <li>.NET Core 2.2 on ECS</li>
+            <li>ASP.NET Core 2.2 on on-premises (ubuntu 18.04)</li>
+        </ul>
+
+
+        <h2><code>Enumerable.Empty()</code> の実装変更</h2>
+
+        <p>これまで、 <code>Enumerable.Empty()</code> は <code>Array.Empty()</code> と同じく空の配列を返していました。
+            そのため、 <code>Array.Empty()</code> 登場以前の時代のイディオムとして、空の配列が必要な場合に</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink>(T[]) Enumerable.Empty&lt;T&gt;()
+</pre>
+
+
+        <p>のように書く場合があります。
+            現在は <code>Array.Empty()</code> があるので必要ありませんが、今回のシステムでは一部このコードが残っていました。</p>
+
+        <p>.NET Core 3.0 では、内部実装が変更され、配列ではなく <code>EmptyPartition&lt;T&gt;</code> を返すようになっているため、 <code>T[]</code> にキャストできず実行時に例外が発生していました。</p>
+
+        <h2>JSON シリアライザの変更</h2>
+
+        <p>ASP.NET Core 3.0 ではデフォルトの JSON シリアライザが変更され、 Newtonsoft.Json への依存が削除されているので、互換性を保つためには <code>Microsoft.AspNetCore.Mvc.NewtonsoftJson</code> パッケージへの参照を追加して、 startup で <code>.AddNewtonsoftJson()</code> を呼ぶ必要があります。</p>
+
+        <p>Newtonsoft と ASP.NET Core 3.0 標準のシリアライザでは enum のデシリアライズの挙動に違いがありました。</p>
+
+        <h2>同期 I/O のブロック</h2>
+
+        <p>ASP.NET Core 3.0 では同期 I/O が禁止されました。
+            同期 I/O を使う処理があると、実行時に例外を吐くようになっています。
+            パフォーマンスの面から I/O は非同期にすべきですが、依存ライブラリが非同期 I/O に対応していない等の場合は明示的に許可する必要があります。</p>
+
+        <p><code>KestrelServerOptions</code> の <code>AllowSynchronousIO</code> を <code>true</code> に設定することでこの問題を回避できます。</p>
+    </div>
+</section>
+</body>
+</html>

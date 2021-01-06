@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>LINQ で指定したキーだけ使って Distinct, Except とかする - wipiano.net</title>
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/10.5.0/styles/vs.min.css">
+    <script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/10.5.0/highlight.min.js"></script>
+    <script>hljs.initHighlightingOnLoad();</script>
+</head>
+<body>
+<header>
+    <div class="site-name"><a href="/index.html">wipiano.net</a></div>
+    <div class="menu-item-container">
+        <p><a href="/profile.html">プロフィール</a></p>
+        <p><a href="/math/index.html">数学</a></p>
+        <p><a href="/programming/index.html">プログラミング</a></p>
+        <p><a href="/diary/index.html">雑記</a></p>
+    </div>
+</header>
+<section id="article-body">
+    <h1>LINQ で指定したキーだけ使って Distinct, Except とかする</h1>
+    <p class="date">2018.03.08</p>
+    <div class="text-container">
+        <p>たとえばこんなてきとうなクラスがあったとして</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synType">public</span> <span class="synType">class</span> MyClass
+{
+    <span class="synType">public</span> <span class="synType">int</span> Id { get; set; }
+    <span class="synType">public</span> <span class="synType">double</span> Value { get; set; }
+}
+</pre>
+
+
+        <p>Id だけを見て distinct とかしたい (けど結果は Value もほしいし、Id が重複した場合に Value は順番に依存 (最初に見つかったもの) で構わない) とかいう場合のはなしです。
+            最近ちょっと似たようなの書くことがあったのでメモ
+            <code>IEqualityComparer</code> 書けばできますが、もうちょっとぱぱっと書きたくて。。。</p>
+
+        <h2>Distinct</h2>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synType">public</span> <span class="synType">static</span> IEnumerable&lt;TItem&gt; Distinct&lt;TItem, TKey&gt;(<span class="synStatement">this</span> IEnumerable&lt;TItem&gt; source, Func&lt;TItem, TKey&gt; keySelector)
+{
+    IEnumerable&lt;TItem&gt; Enumerate()
+    {
+        var set = <span class="synStatement">new</span> HashSet&lt;TKey&gt;();
+        <span class="synStatement">foreach</span> (var item <span class="synStatement">in</span> source)
+            <span class="synStatement">if</span> (set.Add(keySelector(item))) <span class="synStatement">yield</span> <span class="synStatement">return</span> item;
+    }
+
+    <span class="synStatement">if</span> (source == <span class="synConstant">null</span>)
+        <span class="synStatement">throw</span> <span class="synStatement">new</span> ArgumentNullException(nameof(source));
+
+    <span class="synStatement">if</span> (keySelector == <span class="synConstant">null</span>)
+        <span class="synStatement">throw</span> <span class="synStatement">new</span> ArgumentNullException(nameof(keySelector));
+
+    <span class="synStatement">return</span> Enumerate();
+}
+</pre>
+
+
+
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink>var data = <span class="synStatement">new</span> []
+{
+    <span class="synStatement">new</span> MyClass { Id = <span class="synConstant">1</span>, Value = <span class="synConstant">1.0</span> },
+    <span class="synStatement">new</span> MyClass { Id = <span class="synConstant">2</span>, Value = <span class="synConstant">2.0</span> },
+    <span class="synStatement">new</span> MyClass { Id = <span class="synConstant">1</span>, Value = <span class="synConstant">0.5</span> },
+};
+
+<span class="synComment">// {Id = 1, Value = 1.0}, {Id = 2, Value = 2.0}</span>
+var result = data.Distinct(x =&gt; x.Id);
+</pre>
+
+
+        <h2>Except</h2>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synType">public</span> <span class="synType">static</span> IEnumerable&lt;TItem&gt; Except&lt;TItem, TKey&gt;(<span class="synStatement">this</span> IEnumerable&lt;TItem&gt; first, IEnumerable&lt;TItem&gt; second, Func&lt;TItem, TKey&gt; keySelector)
+{
+    IEnumerable&lt;TItem&gt; Enumerate()
+    {
+        var set = <span class="synStatement">new</span> HashSet&lt;TKey&gt;(second.Select(keySelector));
+        <span class="synStatement">foreach</span> (var item <span class="synStatement">in</span> first)
+            <span class="synStatement">if</span> (set.Add(keySelector(item))) <span class="synStatement">yield</span> <span class="synStatement">return</span> item;
+    }
+
+    <span class="synStatement">if</span> (first == <span class="synConstant">null</span>)
+        <span class="synStatement">throw</span> <span class="synStatement">new</span> ArgumentNullException(nameof(first));
+
+    <span class="synStatement">if</span> (second == <span class="synConstant">null</span>)
+        <span class="synStatement">throw</span> <span class="synStatement">new</span> ArgumentNullException(nameof(second));
+
+    <span class="synStatement">if</span> (keySelector == <span class="synConstant">null</span>)
+        <span class="synStatement">throw</span> <span class="synStatement">new</span> ArgumentNullException(nameof(keySelector));
+
+    <span class="synStatement">return</span> Enumerate();
+}
+</pre>
+
+
+
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink>var first = <span class="synStatement">new</span> []
+{
+    <span class="synStatement">new</span> MyClass { Id = <span class="synConstant">1</span>, Value = <span class="synConstant">1.0</span> },
+    <span class="synStatement">new</span> MyClass { Id = <span class="synConstant">2</span>, Value = <span class="synConstant">2.0</span> },
+    <span class="synStatement">new</span> MyClass { Id = <span class="synConstant">3</span>, Value = <span class="synConstant">3.0</span> },
+};
+
+var second = <span class="synStatement">new</span> []
+{
+    <span class="synStatement">new</span> MyClass { Id = <span class="synConstant">1</span>, Value = <span class="synConstant">100.0</span> }
+};
+
+<span class="synComment">// {Id = 2, Value = 2.0}, {Id = 3, Value = 3.0}</span>
+var result = first.Except(second, x =&gt; x.Id);
+</pre>
+
+
+        <h2>Union</h2>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synType">public</span> <span class="synType">static</span> IEnumerable&lt;TItem&gt; Union&lt;TItem, TKey&gt;(<span class="synStatement">this</span> IEnumerable&lt;TItem&gt; first, IEnumerable&lt;TItem&gt; second, Func&lt;TItem, TKey&gt; keySelector)
+{
+    IEnumerable&lt;TItem&gt; Enumerate()
+    {
+        var set = <span class="synStatement">new</span> HashSet&lt;TKey&gt;();
+        <span class="synStatement">foreach</span> (var item <span class="synStatement">in</span> first)
+            <span class="synStatement">if</span> (set.Add(keySelector(item))) <span class="synStatement">yield</span> <span class="synStatement">return</span> item;
+
+        <span class="synStatement">foreach</span> (var item <span class="synStatement">in</span> second)
+            <span class="synStatement">if</span> (set.Add(keySelector(item))) <span class="synStatement">yield</span> <span class="synStatement">return</span> item;
+    }
+
+    <span class="synStatement">if</span> (first == <span class="synConstant">null</span>)
+        <span class="synStatement">throw</span> <span class="synStatement">new</span> ArgumentNullException(nameof(first));
+
+    <span class="synStatement">if</span> (second == <span class="synConstant">null</span>)
+        <span class="synStatement">throw</span> <span class="synStatement">new</span> ArgumentNullException(nameof(second));
+
+    <span class="synStatement">if</span> (keySelector == <span class="synConstant">null</span>)
+        <span class="synStatement">throw</span> <span class="synStatement">new</span> ArgumentNullException(nameof(keySelector));
+
+    <span class="synStatement">return</span> Enumerate();
+}
+</pre>
+
+
+
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink>var first = <span class="synStatement">new</span> []
+{
+    <span class="synStatement">new</span> MyClass { Id = <span class="synConstant">1</span>, Value = <span class="synConstant">1.0</span> },
+    <span class="synStatement">new</span> MyClass { Id = <span class="synConstant">2</span>, Value = <span class="synConstant">2.0</span> },
+    <span class="synStatement">new</span> MyClass { Id = <span class="synConstant">3</span>, Value = <span class="synConstant">3.0</span> },
+};
+
+var second = <span class="synStatement">new</span> []
+{
+    <span class="synStatement">new</span> MyClass { Id = <span class="synConstant">1</span>, Value = <span class="synConstant">100.0</span> },
+    <span class="synStatement">new</span> MyClass { Id = <span class="synConstant">4</span>, Value = <span class="synConstant">400.0</span> },
+};
+
+<span class="synComment">// {Id = 1, Value = 1.0}, {Id = 2, Value = 2.0}, {Id = 3, Value = 3.0}, {Id = 4, Value = 400.0}</span>
+var result = first.Union(second, x =&gt; x.Id);
+</pre>
+
+
+        <h2>Intersect</h2>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synType">public</span> <span class="synType">static</span> IEnumerable&lt;TItem&gt; Intersect&lt;TItem, TKey&gt;(<span class="synStatement">this</span> IEnumerable&lt;TItem&gt; first, IEnumerable&lt;TItem&gt; second, Func&lt;TItem, TKey&gt; keySelector)
+{
+    IEnumerable&lt;TItem&gt; Enumerate()
+    {
+        var set = <span class="synStatement">new</span> HashSet&lt;TKey&gt;(second.Select(keySelector));
+
+        <span class="synStatement">foreach</span> (var item <span class="synStatement">in</span> first)
+            <span class="synStatement">if</span> (!set.Add(keySelector(item))) <span class="synStatement">yield</span> <span class="synStatement">return</span> item;
+    }
+
+    <span class="synStatement">if</span> (first == <span class="synConstant">null</span>)
+        <span class="synStatement">throw</span> <span class="synStatement">new</span> ArgumentNullException(nameof(first));
+
+    <span class="synStatement">if</span> (second == <span class="synConstant">null</span>)
+        <span class="synStatement">throw</span> <span class="synStatement">new</span> ArgumentNullException(nameof(second));
+
+    <span class="synStatement">if</span> (keySelector == <span class="synConstant">null</span>)
+        <span class="synStatement">throw</span> <span class="synStatement">new</span> ArgumentNullException(nameof(keySelector));
+
+    <span class="synStatement">return</span> Enumerate();
+}
+</pre>
+
+
+
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink>var first = <span class="synStatement">new</span> []
+{
+    <span class="synStatement">new</span> MyClass { Id = <span class="synConstant">1</span>, Value = <span class="synConstant">1.0</span> },
+    <span class="synStatement">new</span> MyClass { Id = <span class="synConstant">2</span>, Value = <span class="synConstant">2.0</span> },
+    <span class="synStatement">new</span> MyClass { Id = <span class="synConstant">3</span>, Value = <span class="synConstant">3.0</span> },
+};
+
+var second = <span class="synStatement">new</span> []
+{
+    <span class="synStatement">new</span> MyClass { Id = <span class="synConstant">1</span>, Value = <span class="synConstant">100.0</span> },
+    <span class="synStatement">new</span> MyClass { Id = <span class="synConstant">4</span>, Value = <span class="synConstant">400.0</span> },
+};
+
+<span class="synComment">// {Id = 1, Value = 1.0}</span>
+var result = first.Intersect(second, x =&gt; x.Id);
+</pre>
+
+    </div>
+</section>
+</body>
+</html>

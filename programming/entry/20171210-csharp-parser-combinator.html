@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>C# でオレオレパーサコンビネータをつくってみる - wipiano.net</title>
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/10.5.0/styles/vs.min.css">
+    <script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/10.5.0/highlight.min.js"></script>
+    <script>hljs.initHighlightingOnLoad();</script>
+</head>
+<body>
+<header>
+    <div class="site-name"><a href="/index.html">wipiano.net</a></div>
+    <div class="menu-item-container">
+        <p><a href="/profile.html">プロフィール</a></p>
+        <p><a href="/math/index.html">数学</a></p>
+        <p><a href="/programming/index.html">プログラミング</a></p>
+        <p><a href="/diary/index.html">雑記</a></p>
+    </div>
+</header>
+<section id="article-body">
+    <h1>C# でオレオレパーサコンビネータをつくってみる</h1>
+    <p class="date">2017.12.10</p>
+    <div class="text-container">
+        <h2>この記事について</h2>
+
+        <p>この記事は <a href="https://qiita.com/advent-calendar/2017/csharp">C# Advent Calendar 2017</a> の 10 日目の記事です。
+            アホなので 9 日の夜に書きはじめています。ちゃんと間に合ったらいいねください・・・！！！！</p>
+
+        <p>コードは github にあります
+            <a href="https://github.com/wipiano/csharp-parser-combinators/tree/v0.1.0">wipiano/csharp-parser-combinators</a></p>
+
+        <p>Haskell や Scala で便利便利と言われているパーサコンビネータを自分でつくって遊んでみようという記事です。
+            実用的なパーサコンビネータの完成までは至らなくても、雰囲気だけつかめればと。</p>
+
+        <p>関数をどんどん組み合わせていくので delegate と拡張メソッドを使って遊ぶ感じになります。
+            この記事を読むにあたって、パーサコンビネータや Haskell や Scala や関数型プログラミングの知識は必要ありませんが、高階関数が出てくるので馴染みのない方は wikipedia でもさらっと読んでおくとわかりやすいかと思います。</p>
+
+        <p>Java 版のこの記事を参考に、 C# だったらどう書くかなあ、自分だったらどう書くかなあというところを考えて書きました。
+            なので Haskell とも Scala とも下記の先行記事とも同じ実装にはなっていません。</p>
+
+        <ul>
+            <li><a href="https://qiita.com/7shi/items/68228e19552c271bea81">Java パーサコンビネータ 超入門</a></li>
+        </ul>
+
+
+        <p>.NET の パーサコンビネータの実装はすでにあるようですが、これを再現しようという話ではありません</p>
+
+        <ul>
+            <li><a href="https://github.com/sprache/Sprache">Sprache</a></li>
+        </ul>
+
+
+        <p>私自身関数型にはあまり強くないので詳しい方にコメントいただけると、読んでくれる方も助かるのではないかと思います！</p>
+
+        <p>続編は json のパースあたりをいつか書くかもって感じです。</p>
+
+        <h2>完成イメージ</h2>
+
+        <p>例えば <code>xxx-xxxx</code> の形式の郵便番号を受け付けるパーサはこんなふうに書けます。
+            この記事の最後にもうすこしだけ難しい例がのっていますが、 json のパーサなんかもかけるとおもいます。</p>
+
+        <pre class="code csharp" data-lang="csharp" data-unlink>// xxx-yyyy の xxx 部分
+Parser&lt;int&gt; leftPart = Digit.Repeat(3).Map(chars =&gt; int.Parse(new string(chars.ToArray())));
+
+// xxx-yyyy の yyyy 部分
+Parser&lt;int&gt; rightPart = Digit.Repeat(4).Map(chars =&gt; int.Parse(new string(chars.ToArray())));
+
+// xxx-yyyy の形式の郵便番号のパーサ
+Parser&lt;PostalCode&gt; postalCodeParser = leftPart
+    .Left(Literal(&#39;-&#39;))
+    .Sequence(rightPart, (left, right) =&gt; new PostalCode(left, right));
+
+ParseResult&lt;PostalCode&gt; result = postalCodeParser(Source.Create(&#34;123-4567&#34;));
+PostalCode postalCode = result.Result;</pre>
+
+
+
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synType">public</span> <span class="synType">class</span> PostalCode
+{
+    <span class="synType">public</span> <span class="synType">int</span> LeftPart { get; }
+
+    <span class="synType">public</span> <span class="synType">int</span> RightPart { get; }
+
+    <span class="synType">public</span> PostalCode(<span class="synType">int</span> left, <span class="synType">int</span> right)
+    {
+        <span class="synStatement">this</span>.LeftPart = left;
+        <span class="synStatement">this</span>.RightPart = right;
+    }
+
+    <span class="synType">public</span> <span class="synType">override</span> <span class="synType">string</span> ToString() =&gt; $<span class="synConstant">&quot;{LeftPart}-{RightPart}&quot;</span>;
+}
+</pre>
+
+
+        <h2>パーサを定義する</h2>
+
+        <p>パーサコンビネータは小さいパーサを組み合わせて大きいパーサをつくるための関数です。
+            まずはパーサ周りの用意をしていきます</p>
+
+        <ul>
+            <li><code>Parser</code> への入力を表す <strong><code>Source</code></strong></li>
+            <li><code>Parser</code> の実行結果を表す <strong><code>ParseResult</code></strong></li>
+            <li><code>Source</code> を受け取って ParseResult を返す <strong><code>Parser</code></strong></li>
+        </ul>
+
+
+        <h3>Source</h3>
+
+        <p>パーサは文字列を受け取って結果を返せばいいのですが、パーサを組み合わせていくときに生の string を直接渡すと、読んでいる位置の管理などをパーサが行う必要があるので、あとから不便になります。
+            そこで、うすくラップした <code>Source</code> 構造体を作ります。</p>
+
+        <p>元記事では <code>Parser</code> 自体が <code>Source</code> に対して位置を読み進めるという副作用をもっていましたが、 C# では構造体を書けるのでイミュータブルにします。</p>
+
+        <p><code>Read()</code> メソッドを使って先頭の一文字と、位置が進められたあたらしい <code>Source</code> を取得できます。
+            文字列の長さをこえて読もうとした場合は <code>EndOfSourceException</code> が発生します。</p>
+
+        <p>ちょっとだけ長いですが、、</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synComment">/// </span><span class="synIdentifier">&lt;</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span>
+<span class="synComment">/// Parser への入力</span>
+<span class="synComment">/// </span><span class="synIdentifier">&lt;/</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span>
+<span class="synType">public</span> <span class="synType">struct</span> Source
+{
+    <span class="synComment">// 最初に与えられた文字列をもっておく</span>
+    <span class="synType">private</span> <span class="synType">readonly</span> <span class="synType">string</span> _source;
+
+    <span class="synComment">// 現在位置</span>
+    <span class="synType">private</span> <span class="synType">readonly</span> <span class="synType">int</span> _pos;
+
+    <span class="synType">private</span> Source(<span class="synType">string</span> source, <span class="synType">int</span> pos)
+    {
+        _source = source;
+        _pos = pos;
+    }
+
+    <span class="synComment">/// </span><span class="synIdentifier">&lt;</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span><span class="synComment">文字列の先頭をさす Source を作成します</span><span class="synIdentifier">&lt;/</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span>
+    <span class="synType">public</span> <span class="synType">static</span> Source Create(<span class="synType">string</span> source)
+        =&gt; <span class="synStatement">new</span> Source(source, <span class="synConstant">0</span>);
+
+    <span class="synComment">/// </span><span class="synIdentifier">&lt;</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span><span class="synComment">一文字読み出します</span><span class="synIdentifier">&lt;/</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span>
+    <span class="synType">public</span> (<span class="synType">char</span> c, Source source) Read()
+    {
+        <span class="synStatement">if</span> (_source.Length &lt;= _pos)
+        {
+            <span class="synComment">// source の終わりを超えて読もうとした場合は Exception</span>
+            <span class="synStatement">throw</span> <span class="synStatement">new</span> EndOfSourceException(<span class="synStatement">this</span>);
+        }
+
+        <span class="synStatement">return</span> (_source[_pos], <span class="synStatement">new</span> Source(_source, _pos + <span class="synConstant">1</span>));
+    }
+
+    <span class="synComment">/// </span><span class="synIdentifier">&lt;</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span><span class="synComment">指定した文字数ぶん char を読み出します</span><span class="synIdentifier">&lt;/</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span>
+    <span class="synType">public</span> (IEnumerable&lt;<span class="synType">char</span>&gt; chars, Source source) ReadChars(<span class="synType">int</span> count)
+    {
+        <span class="synStatement">if</span> (_source.Length &lt; _pos + count)
+        {
+            <span class="synComment">// 読み出そうとしている長さが source をこえていたら Exception</span>
+            <span class="synStatement">throw</span> <span class="synStatement">new</span> EndOfSourceException(<span class="synStatement">this</span>);
+        }
+
+        <span class="synStatement">return</span> (_source.Skip(_pos).Take(count), <span class="synStatement">new</span> Source(_source, _pos + count));
+    }
+
+    <span class="synComment">/// </span><span class="synIdentifier">&lt;</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span><span class="synComment">指定した長さの文字列を読み出します</span><span class="synIdentifier">&lt;/</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span>
+    <span class="synType">public</span> (<span class="synType">string</span> s, Source source) ReadString(<span class="synType">int</span> length)
+    {
+        <span class="synStatement">if</span> (_source.Length &lt; _pos + length)
+        {
+            <span class="synComment">// 読み出そうとしている長さが source をこえていたら Exception</span>
+            <span class="synStatement">throw</span> <span class="synStatement">new</span> EndOfSourceException(<span class="synStatement">this</span>);
+        }
+
+        <span class="synStatement">return</span> (_source.Substring(_pos, length), <span class="synStatement">new</span> Source(_source, _pos + length));
+    }
+
+    <span class="synComment">/// </span><span class="synIdentifier">&lt;</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span><span class="synComment">Source の終わりに達したときの Exception</span><span class="synIdentifier">&lt;/</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span>
+    <span class="synType">public</span> <span class="synType">class</span> EndOfSourceException : Exception
+    {
+        <span class="synType">private</span> <span class="synType">static</span> <span class="synType">readonly</span> <span class="synType">string</span> EndOfSource = <span class="synConstant">&quot;EndOfSource&quot;</span>;
+
+        <span class="synComment">/// </span><span class="synIdentifier">&lt;</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span><span class="synComment">例外発生時の Source</span><span class="synIdentifier">&lt;/</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span>
+        <span class="synType">public</span> Source Source { get; }
+
+        <span class="synType">internal</span> EndOfSourceException(Source source)
+            : <span class="synStatement">base</span>(EndOfSource)
+        {
+            <span class="synStatement">this</span>.Source = source;
+        }
+    }
+}
+</pre>
+
+
+        <h3>ParseResult</h3>
+
+        <p><code>ParseResult&lt;T&gt;</code> はパーサの実行結果です。
+            パーサはすべてこれを返します。
+            結果は任意の型で持っておくことができます。
+            構造体が親をもてないのでこんな形にしてしまいましたが、 class にして型スイッチでも良かったかもしれないですね。。</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synType">public</span> <span class="synType">struct</span> ParseResult&lt;T&gt;
+{
+    <span class="synComment">/// </span><span class="synIdentifier">&lt;</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span><span class="synComment">実行後の Source</span><span class="synIdentifier">&lt;/</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span>
+    <span class="synType">public</span> Source Source { get; }
+
+    <span class="synComment">/// </span><span class="synIdentifier">&lt;</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span><span class="synComment">成功したかどうか</span><span class="synIdentifier">&lt;/</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span>
+    <span class="synType">public</span> <span class="synType">bool</span> IsSuccess { get; }
+
+    <span class="synComment">/// </span><span class="synIdentifier">&lt;</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span><span class="synComment">パース結果</span><span class="synIdentifier">&lt;/</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span>
+    <span class="synType">public</span> T Result =&gt;
+        <span class="synStatement">this</span>.IsSuccess ? _result : <span class="synStatement">throw</span> <span class="synStatement">new</span> Exception($<span class="synConstant">&quot;Parse error: {Reason}&quot;</span>);
+
+    <span class="synType">private</span> <span class="synType">readonly</span> T _result;
+
+    <span class="synComment">// 失敗した理由</span>
+    <span class="synType">public</span> <span class="synType">string</span> Reason { get; }
+
+    <span class="synType">internal</span> ParseResult(Source source, <span class="synType">bool</span> isSuccess, T result, <span class="synType">string</span> reason)
+    {
+        <span class="synStatement">this</span>.Source = source;
+        <span class="synStatement">this</span>.IsSuccess = isSuccess;
+        _result = result;
+        <span class="synStatement">this</span>.Reason = reason;
+    }
+}
+</pre>
+
+
+        <p>あとで <code>using static</code> で使いやすいように別クラスにヘルパー関数を定義しておきます</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synType">public</span> <span class="synType">static</span> <span class="synType">class</span> ParseResultHelper
+{
+    <span class="synType">public</span> <span class="synType">static</span> ParseResult&lt;T&gt; Success&lt;T&gt;(Source source, T result)
+        =&gt; <span class="synStatement">new</span> ParseResult&lt;T&gt;(source, <span class="synConstant">true</span>, result, <span class="synStatement">default</span>);
+
+    <span class="synType">public</span> <span class="synType">static</span> ParseResult&lt;T&gt; Failed&lt;T&gt;(Source source, <span class="synType">string</span> reason)
+        =&gt; <span class="synStatement">new</span> ParseResult&lt;T&gt;(source, <span class="synConstant">false</span>, <span class="synStatement">default</span>, reason);
+}
+</pre>
+
+
+        <h3>Parser</h3>
+
+        <p>パーサ本体の定義はとてもかんたんです。
+            Source を受け取って ParseResult を返します。
+            <strong>前に実行されたパーサの結果を気にするのはパーサコンビネータの役割なので、パーサ自体は Source だけに集中します。</strong></p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synType">public</span> <span class="synType">delegate</span> ParseResult&lt;T&gt; Parser&lt;T&gt;(Source source);
+</pre>
+
+
+        <h2>一文字だけ読むパーサを実装する</h2>
+
+        <p>まず簡単な一文字だけ読むパーサをいくつか実装してみます。</p>
+
+        <ul>
+            <li>どんな文字でも受理するパーサ <code>Any</code></li>
+            <li>数値 (0 〜 9) だけ受理するパーサ <code>Digit</code></li>
+            <li>指定された文字だけ受理するパーサ (を返す高階関数) <code>Literal(char c)</code></li>
+            <li>指定された関数が <code>true</code> を返す文字を受理するパーサ (を返す高階関数) <code>Is(Func&lt;char, bool&gt;)</code></li>
+        </ul>
+
+
+        <p>ここで、パーサが Success や Failed の <code>ParseResult&lt;T&gt;</code> を作りやすくする関数を import しておきます</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synStatement">using</span> <span class="synType">static</span> ParseResultHelper;
+
+<span class="synType">public</span> <span class="synType">static</span> <span class="synType">class</span> CharParsers
+{
+   <span class="synComment">// </span><span class="synTodo">TODO</span>
+}
+</pre>
+
+
+        <h3>Any - どんな文字でも受け付ける</h3>
+
+        <p>どんな文字がきてもいいからとりあえず読み進めたい、というときのためのパーサです。
+            常に <code>Success</code> を返せば良いです。</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synType">public</span> <span class="synType">static</span> Parser&lt;<span class="synType">char</span>&gt; Any { get; } = (Source s) =&gt;
+{
+    var (c, next) = s.Read();
+    <span class="synStatement">return</span> Success(next, c);
+};
+</pre>
+
+
+        <p>例:</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink>var result = Any(Source.Create(<span class="synConstant">&quot;a&quot;</span>));    <span class="synComment">// { IsSuccess: true, Result: 'a' }</span>
+</pre>
+
+
+        <h3>Digit - 数字を読む</h3>
+
+        <p>数値であれば Success を返します。</p>
+
+        <pre class="code csharp:CharParsers.cs" data-lang="csharp:CharParsers.cs" data-unlink>public static Parser&lt;char&gt; Digit { get; } = (Source s) =&gt;
+{
+    var (c, next) = s.Read();
+    return char.IsDigit(c) ? Success(next, c) : Failed&lt;char&gt;(next, &#34;Is not a digit.&#34;);
+};</pre>
+
+
+        <p>例:</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink>
+<span class="synComment">// xxx-yyyy の xxx 部分</span>
+Parser&lt;<span class="synType">int</span>&gt; leftPart = Digit.Repeat(<span class="synConstant">3</span>).Map(chars =&gt; <span class="synType">int</span>.Parse(<span class="synStatement">new</span> <span class="synType">string</span>(chars.ToArray())));
+
+<span class="synComment">// xxx-yyyy の yyyy 部分</span>
+Parser&lt;<span class="synType">int</span>&gt; rightPart = Digit.Repeat(<span class="synConstant">4</span>).Map(chars =&gt; <span class="synType">int</span>.Parse(<span class="synStatement">new</span> <span class="synType">string</span>(chars.ToArray())));
+
+<span class="synComment">// xxx-yyyy の形式の郵便番号のパーサ</span>
+Parser&lt;PostalCode&gt; postalCodeParser = leftPart
+    .Left(Literal(<span class="synConstant">'-'</span>))
+    .Sequence(rightPart, (left, right) =&gt; <span class="synStatement">new</span> PostalCode(left, right));
+
+ParseResult&lt;PostalCode&gt; result = postalCodeParser(Source.Create(<span class="synConstant">&quot;123-4567&quot;</span>));
+PostalCode postalCode = result.Result;
+var success = Digit(Source.Create(<span class="synConstant">&quot;12a&quot;</span>));    <span class="synComment">// { IsSuccess: true, Result: '1' }</span>
+var failed = Digit(Source.Create(<span class="synConstant">&quot;a12&quot;</span>));     <span class="synComment">// { IsSuccess: false, Result: Exception }</span>
+        </pre>
+
+
+        <h3>Literal - ある文字に一致していたら OK</h3>
+
+        <p>これは文字を指定してその都度パーサを作る必要があるので、 <code>Parser&lt;char&gt;</code> を返す高階関数を書きます。
+            与えられた文字と、 Source から取得した文字が一致していれば成功です。</p>
+
+        <pre class="code csharp:CharParsers.cs" data-lang="csharp:CharParsers.cs" data-unlink>public static Parser&lt;char&gt; Literal(char literal) =&gt; (Source s) =&gt;
+{
+    var (c, next) = s.Read();
+    return c == literal ? Success(next, c) : Failed&lt;char&gt;(next, $&#34;{c} is not equals {literal}&#34;);
+};</pre>
+
+
+        <p>例:</p>
+
+        <pre class="code csharp" data-lang="csharp" data-unlink>var parser = Literal(&#39;a&#39;); // &#39;a&#39; を受け付けるパーサ
+var success = parser(Source.Create(&#34;abc&#34;));    // { IsSuccess: true, Result: &#39;a&#39; }
+var failed = parser(Source.Create(&#34;ccc&#34;));     // { IsSuccess: false, Result: Exception }</pre>
+
+
+        <h3>Is - 判定関数を指定する</h3>
+
+        <p>これも Literal と同じように高階関数を書きます。
+            与えられた関数が true を返すかどうかで成功か失敗かがきまります。</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synType">public</span> <span class="synType">static</span> Parser&lt;<span class="synType">char</span>&gt; Is(Func&lt;<span class="synType">char</span>, <span class="synType">bool</span>&gt; predicate) =&gt; (Source s) =&gt;
+{
+    var (c, next) = s.Read();
+    <span class="synStatement">return</span> predicate(c) ? Success(next, c) : Failed&lt;<span class="synType">char</span>&gt;(next, $<span class="synConstant">&quot;predicate({c}) returns false.&quot;</span>);
+};
+</pre>
+
+
+        <p>例:</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink>var lowerParser = Is(<span class="synType">char</span>.IsLower);    <span class="synComment">// 小文字だけ受け付けるパーサ</span>
+var success = lowerParser(Source.Create(<span class="synConstant">&quot;abc&quot;</span>));    <span class="synComment">// { IsSuccess: true, Result: 'a' }</span>
+var failed = lowerParser(Source.Create(<span class="synConstant">&quot;ABC&quot;</span>));     <span class="synComment">// { IsSuccess: false, Result: Exception }</span>
+</pre>
+
+
+        <p>これまでにつくったパーサはすべて <code>Is()</code> で置き換えられます。</p>
+
+        <p>とりあえず、パーサコンビネータをかんたんに使ってみるにはこのぐらいでよさそうなので先に進みましょう。</p>
+
+        <h2>パーサコンビネータ</h2>
+
+        <p>いよいよパーサコンビネータをつくっていきます。
+            パーサを組み合わせるための道具がパーサコンビネータですが、
+            実装寄りの言い方をすると、パーサコンビネータは <strong>パーサを引数にとって新しいパーサを返す関数</strong> です。</p>
+
+        <p>今回は 5 種類の基本的なパーサコンビネータをつくってみます。</p>
+
+        <ul>
+            <li><code>Many</code>: 0 回以上の繰り返し</li>
+            <li><code>Repeat</code>: 指定回数の繰り返し</li>
+            <li><code>Sequence</code>: 2 つのパーサを順番に結合する</li>
+            <li><code>Or</code>: 2 つのパーサのどちらか成功した方の結果をとる</li>
+            <li><code>Left, Right</code>: 成功する条件は <code>Sequence</code> と同じだが、結果は左辺または右辺のものだけをとりだす</li>
+        </ul>
+
+
+        <p>ふつうに書くと () がたくさんになって Lisp((((())))) みたいになる上にちょっと書きごこちよくないので <code>Parser&lt;T&gt;</code> の拡張メソッドとしてつくります。（Lisp は好きですよ）</p>
+
+        <h3><code>ImmutableList&lt;T&gt;</code></h3>
+
+        <p>今回、コンビネータの戻り値として <code>Parser&lt;ImmutableList&lt;T&gt;&gt;</code> を使います。
+            <code>List&lt;T&gt;</code> と違ってイミュータブルなリストであり、 <code>Add</code> メソッドなどのメソッドはすべて副作用のない関数になっていて、そのコレクション自体を変更するのではなく、変更された新しいコレクションを返します。
+            このために、データの構造も配列ではなく連結リストのような構造になっています。</p>
+
+        <p>この性質から、コンビネータが返すパーサを副作用のないパーサにすることができ、見通しがよくなっています。</p>
+
+        <p>標準では使えないので、 <code>System.Collections.Immutable</code> パッケージを nuget でインストールしてください。</p>
+
+        <h3>Many - 0 回以上の繰り返し</h3>
+
+        <p>まずは引数を 1 個しかとらないコンビネータが簡単なので Many からやっていきましょう。
+            失敗するまで読み続けて、最後に成功した結果のリストを返します。
+            「0回以上」なので 1 度も成功しなくても OK です。</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synType">public</span> <span class="synType">static</span> Parser&lt;ImmutableList&lt;T&gt;&gt; Many&lt;T&gt;(<span class="synStatement">this</span> Parser&lt;T&gt; parser)
+{
+    ParseResult&lt;ImmutableList&lt;T&gt;&gt; Impl(Source s, ImmutableList&lt;T&gt; results)
+    {
+        var result = parser(s);
+
+        <span class="synStatement">return</span> result.IsSuccess
+            ? Impl(result.Source, results.Add(result.Result))
+            : Success(s, results);
+    }
+
+    <span class="synStatement">return</span> (Source s) =&gt; Impl(s, ImmutableList&lt;T&gt;.Empty);
+}
+</pre>
+
+
+        <p>実際に parser を実行しているのは <code>Impl</code> 内です。 <code>Impl</code> は失敗するまで再帰的に呼ばれ続けます。</p>
+
+        <p>数字の 0 回以上の繰り返しはこのように書けます:</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink>Parser&lt;ImmutableList&lt;<span class="synType">char</span>&gt;&gt; manyDigits = Digit.Many();
+</pre>
+
+
+        <h3>Repeat - 指定回数の繰り返し</h3>
+
+        <p>Many の回数指定版です。今度は指定された回数分きっちり成功しつづけなければなりません。</p>
+
+        <pre class="code csharp:Combinators.cs" data-lang="csharp:Combinators.cs" data-unlink>public static Parser&lt;ImmutableList&lt;T&gt;&gt; Repeat&lt;T&gt;(this Parser&lt;T&gt; parser, int count)
+{
+    ParseResult&lt;ImmutableList&lt;T&gt;&gt; Impl(Source s, int c, ImmutableList&lt;T&gt; results)
+    {
+        if (c == 0)
+        {
+            // 0 回を指定されたら終わり
+            return Success(s, results);
+        }
+
+        var result = parser(s);
+
+        return result.IsSuccess
+            ? Impl(result.Source, c - 1, results.Add(result.Result))
+            : Failed&lt;ImmutableList&lt;T&gt;&gt;(result.Source, result.Reason);
+    }
+
+    return (Source s) =&gt; Impl(s, count, ImmutableList&lt;T&gt;.Empty);
+}</pre>
+
+
+        <p>3 桁の数字はこのように書けます:</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink>Parser&lt;ImmutableList&lt;<span class="synType">char</span>&gt;&gt; parser = Digit.Repeat(<span class="synConstant">3</span>);
+</pre>
+
+
+        <h3>Sequence - 連結</h3>
+
+        <p>ここから 2 つのパーサを引数にとるコンビネータの実装に入ります。</p>
+
+        <p><code>ParseResult</code> を string に限定せずジェネリック型にしてしまったことでここから一気に実装がめんどくさくなってしまいました・・・。</p>
+
+        <p>渡されるパーサの型がちがう場合を考慮して、3 つのオーバーロードを用意する必要があります。</p>
+
+        <ul>
+            <li><code>Parser&lt;ImmutableList&lt;T&gt;&gt; Sequence&lt;T&gt;(Parser&lt;T&gt; first, Parser&lt;T&gt;  second)</code>: 型がおなじパーサを連結する</li>
+            <li><code>Parser&lt;ImmutableList&lt;T&gt;&gt; Sequence&lt;T&gt;(Parser&lt;ImmutableList&lt;T&gt;&gt; first, Parser&lt;T&gt; second)</code>: 型が同じパーサを 2 回以上つづけて連結したい場合のサポート</li>
+            <li><code>Parser&lt;TResult&gt; Sequence&lt;TFirst, TSecond, TResult&gt;(Parser&lt;TFirst&gt; first, Parser&lt;TSecond&gt; second, Func&lt;TFirst, TSecond, TResult&gt; resultSelector)</code>: 型が一致しないパーサを連結する</li>
+        </ul>
+
+
+        <pre class="code csharp:Combinators.cs" data-lang="csharp:Combinators.cs" data-unlink>public static Parser&lt;ImmutableList&lt;T&gt;&gt; Sequence&lt;T&gt;(this Parser&lt;T&gt; first, Parser&lt;T&gt; second) =&gt;
+    first.Sequence(second, (f, s) =&gt; ImmutableList&lt;T&gt;.Empty.Add(f).Add(s));
+
+public static Parser&lt;ImmutableList&lt;T&gt;&gt; Sequence&lt;T&gt;(this Parser&lt;ImmutableList&lt;T&gt;&gt; first, Parser&lt;T&gt; second) =&gt;
+    first.Sequence(second, (f, s) =&gt; f.Add(s));
+
+public static Parser&lt;TResult&gt; Sequence&lt;TFirst, TSecond, TResult&gt;(this Parser&lt;TFirst&gt; first, Parser&lt;TSecond&gt; second, Func&lt;TFirst, TSecond, TResult&gt; resultSelector) =&gt;
+    (Source s) =&gt;
+    {
+        var firstResult = first(s);
+        if (firstResult.IsSuccess)
+        {
+            var secondResult = second(firstResult.Source);
+
+            return secondResult.IsSuccess
+                ? Success(secondResult.Source, resultSelector(firstResult.Result, secondResult.Result))
+                : Failed&lt;TResult&gt;(secondResult.Source, secondResult.Reason);
+        }
+        else
+        {
+            return Failed&lt;TResult&gt;(firstResult.Source, firstResult.Reason);
+        }
+    };</pre>
+
+
+        <p><code>Qiita</code> という文字列を受け付けるパーサはこんな感じになります:</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink>var qiitaParser = Literal(<span class="synConstant">'Q'</span>)
+    .Sequence(Literal(<span class="synConstant">'i'</span>).Repeat(<span class="synConstant">2</span>))
+    .Sequence(Literal(<span class="synConstant">'t'</span>))
+    .Sequence(Literal(<span class="synConstant">'a'</span>));
+
+<span class="synType">string</span> qiita = <span class="synType">string</span>.Join(<span class="synConstant">&quot;&quot;</span>, qiitaParser(Source.Create(<span class="synConstant">&quot;Qiita&quot;</span>)).Result);
+</pre>
+
+
+        <h3>Or - 選択</h3>
+
+        <p>Or も Sequence と同じように実装できます。
+            ただし Or はふたつのパーサが同じ型である必要があります。
+            ここで、 first が成功した場合は second は評価せずに first の結果を返すことにします。</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synType">public</span> <span class="synType">static</span> Parser&lt;T&gt; Or&lt;T&gt;(<span class="synStatement">this</span> Parser&lt;T&gt; left, Parser&lt;T&gt; right) =&gt; (Source s) =&gt;
+{
+    var leftResult = left(s);
+
+    <span class="synStatement">return</span> leftResult.IsSuccess
+        ? leftResult
+        : right(s);
+};
+</pre>
+
+
+        <h3>Left, Right</h3>
+
+        <p>Left, Right の実装は Sequence に渡す ResultSelector が違うだけです。</p>
+
+        <p>Left は与えられたパーサ両方が成功したとき、右側の結果を捨てて左側の結果だけを返します。
+            Right はその逆で、左側の結果を捨てて右側の結果だけを返します。</p>
+
+        <pre class="code csharp:Combinators.cs" data-lang="csharp:Combinators.cs" data-unlink>public static Parser&lt;TLeft&gt; Left&lt;TLeft, TRight&gt;(this Parser&lt;TLeft&gt; left, Parser&lt;TRight&gt; right) =&gt;
+    left.Sequence(right, (l, r) =&gt; l);
+
+public static Parser&lt;TRight&gt; Right&lt;TLeft, TRight&gt;(this Parser&lt;TLeft&gt; left, Parser&lt;TRight&gt; right) =&gt;
+    left.Sequence(right, (l, r) =&gt; r);</pre>
+
+
+        <h3>Map - 型変換</h3>
+
+        <p>これはパーサどうしを組み合わせるものではないですが、便利な関数として Parser の型を変換するための関数をつくっておきます。</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synType">public</span> <span class="synType">static</span> Parser&lt;TResult&gt; Map&lt;TParser, TResult&gt;(<span class="synStatement">this</span> Parser&lt;TParser&gt; parser, Func&lt;TParser, TResult&gt; mapper) =&gt;
+    (Source s) =&gt;
+    {
+        var result = parser(s);
+        <span class="synStatement">return</span> result.IsSuccess
+            ? Success(result.Source, mapper(result.Result))
+            : Failed&lt;TResult&gt;(result.Source, result.Reason);
+    };
+</pre>
+
+
+        <h2>最後にしょぼい郵便番号のパーサをつくってみる</h2>
+
+        <p>なんとか完成しました・・・！！！</p>
+
+        <p>最後に郵便番号のパーサをつくってみます。
+            そのままだと Sequence だけで終わってしまうので、すこしゆるいパーサをつくります。</p>
+
+        <p>下記のような入力はすべて受け付けることができます</p>
+
+        <ul>
+            <li><code>123-4567</code></li>
+            <li><code>1234567</code></li>
+            <li><code>〒1234567</code></li>
+            <li><code>〒123-4567</code></li>
+        </ul>
+
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synComment">// xxx-yyyy の xxx 部分</span>
+Parser&lt;<span class="synType">int</span>&gt; leftPart = Digit.Repeat(<span class="synConstant">3</span>).Map(chars =&gt; <span class="synType">int</span>.Parse(<span class="synStatement">new</span> <span class="synType">string</span>(chars.ToArray())));
+
+<span class="synComment">// xxx-yyyy の yyyy 部分</span>
+Parser&lt;<span class="synType">int</span>&gt; rightPart = Digit.Repeat(<span class="synConstant">4</span>).Map(chars =&gt; <span class="synType">int</span>.Parse(<span class="synStatement">new</span> <span class="synType">string</span>(chars.ToArray())));
+
+<span class="synComment">// 普通の xxx-yyyy</span>
+Parser&lt;PostalCode&gt; normal = leftPart.Left(Literal(<span class="synConstant">'-'</span>)).Sequence(rightPart, (l, r) =&gt; <span class="synStatement">new</span> PostalCode(l, r));
+
+<span class="synComment">// xxxyyyy</span>
+Parser&lt;PostalCode&gt; withoutSeparator = leftPart.Sequence(rightPart, (l, r) =&gt; <span class="synStatement">new</span> PostalCode(l, r));
+
+Parser&lt;PostalCode&gt; postalCode = normal.Or(withoutSeparator);
+
+<span class="synComment">// 〒 が付加されてもよい</span>
+Parser&lt;PostalCode&gt; postalCodeParser = Literal(<span class="synConstant">'〒'</span>).Right(postalCode).Or(postalCode);
+</pre>
+    </div>
+</section>
+</body>
+</html>

@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Span&lt;T&gt; のつかいみち - wipiano.net</title>
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/10.5.0/styles/vs.min.css">
+    <script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/10.5.0/highlight.min.js"></script>
+    <script>hljs.initHighlightingOnLoad();</script>
+</head>
+<body>
+<header>
+    <div class="site-name"><a href="/index.html">wipiano.net</a></div>
+    <div class="menu-item-container">
+        <p><a href="/profile.html">プロフィール</a></p>
+        <p><a href="/math/index.html">数学</a></p>
+        <p><a href="/programming/index.html">プログラミング</a></p>
+        <p><a href="/diary/index.html">雑記</a></p>
+    </div>
+</header>
+<section id="article-body">
+    <h1>Span&lt;T&gt; のつかいみち</h1>
+    <p class="date">20yy.mm.dd</p>
+    <div class="text-container">
+        <p>Qiita から移行 (2019/12/10 投稿)</p>
+
+        <p>--</p>
+
+        <p>これは、 <a href="https://qiita.com/advent-calendar/2019/c-sharp-2">C# Advent Calendar 2019</a> の 10 日目の記事です（遅刻すみません！）。
+            前の記事は、 @Xeltica さんの <a href="https://qiita.com/Xeltica/items/a1cbdb282832e0b67252">C# 用ゲームエンジンを自作した話</a> です。</p>
+
+        <p>.NET Core 2.1 で使えるようになってしばらくたった <code>Span&lt;T&gt;</code> ですが、まだ使えてないよ〜って C#er のみなさんもまだまだいらっしゃると思うので、ぼくが書いたコードを晒していきます。
+            もっと速くなるよ、とかあれば教えてください！</p>
+
+        <h2>文字列系</h2>
+
+        <p>ここでのコツは、 <code>Span&lt;char&gt;#ToString()</code> をうまく使うことと、 stackalloc でスタック領域を活用することです。
+            ヒープアロケーションを極力避けることで、高速に動作させます。</p>
+
+        <h3>byte[] -> 16 進数 への変換</h3>
+
+        <p>byte 配列を 16 進数の文字列に変換する拡張メソッドです。</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synComment">/// </span><span class="synIdentifier">&lt;</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span>
+<span class="synComment">/// 16 進数の文字列に変換します</span>
+<span class="synComment">/// </span><span class="synIdentifier">&lt;/</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span>
+<span class="synType">public</span> <span class="synType">static</span> <span class="synType">string</span> ToHexString(<span class="synStatement">this</span> <span class="synType">byte</span>[] source, <span class="synType">bool</span> upperCase = <span class="synConstant">false</span>)
+{
+    Span&lt;<span class="synType">char</span>&gt; buffer = <span class="synStatement">stackalloc</span> <span class="synType">char</span>[source.Length * <span class="synConstant">2</span>];
+    source.WriteAsHexChars(buffer, <span class="synStatement">out</span> _, upperCase);
+    <span class="synStatement">return</span> buffer.ToString();
+}
+
+<span class="synComment">/// </span><span class="synIdentifier">&lt;</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span>
+<span class="synComment">/// バイト列を 16 進数の列として書き込みます</span>
+<span class="synComment">/// </span><span class="synIdentifier">&lt;/</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span>
+<span class="synType">public</span> <span class="synType">static</span> <span class="synType">void</span> WriteAsHexChars(<span class="synStatement">this</span> ReadOnlySpan&lt;<span class="synType">byte</span>&gt; bytes, Span&lt;<span class="synType">char</span>&gt; dest, <span class="synStatement">out</span> <span class="synType">int</span> charsWritten,
+    <span class="synType">bool</span> upperCase = <span class="synConstant">false</span>)
+{
+    charsWritten = <span class="synConstant">0</span>;
+
+    <span class="synStatement">foreach</span> (<span class="synType">byte</span> b <span class="synStatement">in</span> bytes)
+    {
+        b.WriteAsHexChars(dest.Slice(charsWritten), <span class="synStatement">out</span> var count, upperCase);
+        charsWritten += count;
+    }
+}
+
+<span class="synComment">/// </span><span class="synIdentifier">&lt;</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span>
+<span class="synComment">/// バイトを 16 進数として書き込みます</span>
+<span class="synComment">/// </span><span class="synIdentifier">&lt;/</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span>
+[MethodImpl(MethodImplOptions.AggressiveInlining)]
+<span class="synType">public</span> <span class="synType">static</span> <span class="synType">void</span> WriteAsHexChars(<span class="synStatement">this</span> <span class="synType">byte</span> b, Span&lt;<span class="synType">char</span>&gt; dest, <span class="synStatement">out</span> <span class="synType">int</span> charsWritten, <span class="synType">bool</span> upperCase = <span class="synConstant">false</span>)
+{
+    ReadOnlySpan&lt;<span class="synType">char</span>&gt; source = upperCase ? s_byteToHexUpper[b] : s_byteToHexLower[b];
+    source.CopyTo(dest);
+    charsWritten = source.Length; <span class="synComment">// 2 固定のはず</span>
+}
+
+<span class="synComment">// byte -&gt; char[] に変換するための 配列</span>
+<span class="synType">private</span> <span class="synType">static</span> <span class="synType">readonly</span> <span class="synType">char</span>[][] s_byteToHexLower =
+    Enumerable.Range(<span class="synConstant">0</span>, <span class="synConstant">256</span>).Select(x =&gt; ((<span class="synType">byte</span>) x).ToString(<span class="synConstant">&quot;x2&quot;</span>).ToCharArray()).ToArray();
+
+<span class="synType">private</span> <span class="synType">static</span> <span class="synType">readonly</span> <span class="synType">char</span>[][] s_byteToHexUpper =
+    Enumerable.Range(<span class="synConstant">0</span>, <span class="synConstant">256</span>).Select(x =&gt; ((<span class="synType">byte</span>) x).ToString(<span class="synConstant">&quot;X2&quot;</span>).ToCharArray()).ToArray();
+</pre>
+
+
+        <h3>snake_case -> PascalCase への変換</h3>
+
+        <p>スネークケースからパスカルケースへの変換をします。これは他の変換 (例: Pascal -> snake) にも応用できます。</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synType">public</span> <span class="synType">static</span> <span class="synType">string</span> SnakeCaseToPascalCase(<span class="synStatement">this</span> <span class="synType">string</span> snake)
+{
+    ReadOnlySpan&lt;<span class="synType">char</span>&gt; snakeSpan = snake;
+    Span&lt;<span class="synType">char</span>&gt; buffer = <span class="synStatement">stackalloc</span> <span class="synType">char</span>[snakeSpan.Length];
+
+    <span class="synType">int</span> bufferPos = <span class="synConstant">0</span>;
+    <span class="synType">bool</span> toUpper = <span class="synConstant">true</span>;
+    <span class="synStatement">for</span> (var i = <span class="synConstant">0</span>; i &lt; snake.Length; i++)
+    {
+        var target = snakeSpan[i];
+
+        <span class="synStatement">if</span> (target == <span class="synConstant">'_'</span>)
+        {
+            toUpper = <span class="synConstant">true</span>;
+        }
+        <span class="synStatement">else</span>
+        {
+            buffer[bufferPos++] = toUpper ? <span class="synType">char</span>.ToUpper(target) : target;
+            toUpper = <span class="synConstant">false</span>;
+        }
+    }
+
+    <span class="synStatement">return</span> buffer.Slice(<span class="synConstant">0</span>, bufferPos).ToString();
+}
+</pre>
+
+
+        <h2>MD5 ハッシュの計算</h2>
+
+        <p>MD5 ハッシュの計算にも Span が活用できます。
+            MD5CryptoServiceProvider はすこしラップしてあげると使いやすくなりますが、ここでも Span を活用します。
+            Span のコツは、できるだけ最後まで Span で扱うこと (= スタックを最大限に活用)、だと思ってます。
+            さっきの byte[] -> 16 進への変換も利用して、16 進数の書き込みまで Span だけでやってます。</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synComment">/// </span><span class="synIdentifier">&lt;</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span>
+<span class="synComment">/// MD5 ヘルパ</span>
+<span class="synComment">/// </span><span class="synIdentifier">&lt;/</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span>
+<span class="synType">public</span> <span class="synType">static</span> <span class="synType">class</span> Md5HashHelper
+{
+    <span class="synComment">// md5 インスタンスキャッシュ</span>
+    <span class="synComment">// このインスタンスはメソッド呼び出しによって内部状態が遷移するため</span>
+    <span class="synComment">// かならず内部状態の初期化を行うこと。</span>
+    <span class="synComment">// 呼び出し後に自動的に内部状態が初期化されるメソッドは ComputeHash, TryComputeHash のみです。</span>
+    [ThreadStatic] <span class="synType">private</span> <span class="synType">static</span> MD5CryptoServiceProvider t_md5 = <span class="synConstant">null</span>;
+
+    <span class="synComment">/// </span><span class="synIdentifier">&lt;</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span>
+    <span class="synComment">/// MD5 ハッシュのバイト長</span>
+    <span class="synComment">/// </span><span class="synIdentifier">&lt;/</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span>
+    <span class="synType">public</span> <span class="synType">const</span> <span class="synType">int</span> HashBytesLength = <span class="synConstant">16</span>;
+
+    <span class="synComment">/// </span><span class="synIdentifier">&lt;</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span>
+    <span class="synComment">/// MD5 ハッシュの十六進表記の文字数</span>
+    <span class="synComment">/// </span><span class="synIdentifier">&lt;/</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span>
+    <span class="synType">public</span> <span class="synType">const</span> <span class="synType">int</span> HashHexStringLength = <span class="synConstant">32</span>;
+
+    <span class="synComment">/// </span><span class="synIdentifier">&lt;</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span>
+    <span class="synComment">/// キャッシュを使用するか</span>
+    <span class="synComment">/// </span><span class="synIdentifier">&lt;/</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span>
+    <span class="synComment">/// </span><span class="synIdentifier">&lt;</span><span class="synStatement">remarks</span><span class="synIdentifier">&gt;</span>
+    <span class="synComment">/// true の場合、 MD5CryptoServiceProvider のインスタンスをスレッドごとにキャッシュして使用します。</span>
+    <span class="synComment">/// false の場合は毎回新しい MD5CryptoServiceProvider のインスタンスを使用します。</span>
+    <span class="synComment">/// </span><span class="synIdentifier">&lt;/</span><span class="synStatement">remarks</span><span class="synIdentifier">&gt;</span>
+    <span class="synType">public</span> <span class="synType">static</span> <span class="synType">bool</span> UseCache { get; set; } = <span class="synConstant">true</span>;
+
+    <span class="synComment">/// </span><span class="synIdentifier">&lt;</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span>
+    <span class="synComment">/// 指定したバイト配列のハッシュ値を計算します。</span>
+    <span class="synComment">/// </span><span class="synIdentifier">&lt;/</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span>
+    <span class="synType">public</span> <span class="synType">static</span> <span class="synType">byte</span>[] ComputeHash(<span class="synType">byte</span>[] buffer)
+    {
+        <span class="synStatement">return</span> ComputeHash(buffer, <span class="synConstant">0</span>, buffer.Length);
+    }
+
+    <span class="synComment">/// </span><span class="synIdentifier">&lt;</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span>
+    <span class="synComment">/// 指定したバイト配列の指定した領域のハッシュ値を計算します。</span>
+    <span class="synComment">/// </span><span class="synIdentifier">&lt;/</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span>
+    <span class="synType">public</span> <span class="synType">static</span> <span class="synType">byte</span>[] ComputeHash(<span class="synType">byte</span>[] buffer, <span class="synType">int</span> offset, <span class="synType">int</span> count)
+    {
+        var md5 = RentUnsafe();
+        var result = md5.ComputeHash(buffer, offset, count);
+        ReturnUnsafe(md5);
+        <span class="synStatement">return</span> result;
+    }
+
+    <span class="synComment">/// </span><span class="synIdentifier">&lt;</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span>
+    <span class="synComment">/// 指定した Stream オブジェクトのハッシュ値を計算します</span>
+    <span class="synComment">/// </span><span class="synIdentifier">&lt;/</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span>
+    <span class="synType">public</span> <span class="synType">static</span> <span class="synType">byte</span>[] ComputeHash(Stream inputStream)
+    {
+        var md5 = RentUnsafe();
+        var result = md5.ComputeHash(inputStream);
+        ReturnUnsafe(md5);
+        <span class="synStatement">return</span> result;
+    }
+
+    <span class="synComment">/// </span><span class="synIdentifier">&lt;</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span>
+    <span class="synComment">/// 入力バイト列のハッシュ値を計算し、出力バイト列にコピーします。</span>
+    <span class="synComment">/// </span><span class="synIdentifier">&lt;/</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span>
+    <span class="synType">public</span> <span class="synType">static</span> <span class="synType">bool</span> TryComputeHash(ReadOnlySpan&lt;<span class="synType">byte</span>&gt; source, Span&lt;<span class="synType">byte</span>&gt; destination, <span class="synStatement">out</span> <span class="synType">int</span> bytesWritten)
+    {
+        var md5 = RentUnsafe();
+        var result = md5.TryComputeHash(source, destination, <span class="synStatement">out</span> bytesWritten);
+        ReturnUnsafe(md5);
+        <span class="synStatement">return</span> result;
+    }
+
+    <span class="synComment">/// </span><span class="synIdentifier">&lt;</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span>
+    <span class="synComment">/// 入力バイト列のハッシュ値を計算し、16 進数表記で出力文字列にコピーします</span>
+    <span class="synComment">/// </span><span class="synIdentifier">&lt;/</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span>
+    <span class="synType">public</span> <span class="synType">static</span> <span class="synType">bool</span> TryComputeHash(ReadOnlySpan&lt;<span class="synType">byte</span>&gt; source, Span&lt;<span class="synType">char</span>&gt; destination, <span class="synStatement">out</span> <span class="synType">int</span> charsWritten, <span class="synType">bool</span> upperCase = <span class="synConstant">false</span>)
+    {
+        Span&lt;<span class="synType">byte</span>&gt; buffer = <span class="synStatement">stackalloc</span> <span class="synType">byte</span>[<span class="synConstant">16</span>];
+        <span class="synStatement">if</span> (TryComputeHash(source, buffer, <span class="synStatement">out</span> var bytesWritten))
+        {
+            ((ReadOnlySpan&lt;<span class="synType">byte</span>&gt;) buffer).WriteAsHexChars(destination, <span class="synStatement">out</span> charsWritten, upperCase);
+            <span class="synStatement">return</span> <span class="synConstant">true</span>;
+        }
+        <span class="synStatement">else</span>
+        {
+            charsWritten = <span class="synConstant">0</span>;
+            <span class="synStatement">return</span> <span class="synConstant">false</span>;
+        }
+    }
+
+    <span class="synComment">/// </span><span class="synIdentifier">&lt;</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span>
+    <span class="synComment">/// MD5 インスタンスを借用します。</span>
+    <span class="synComment">/// </span><span class="synIdentifier">&lt;/</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span>
+    <span class="synType">private</span> <span class="synType">static</span> MD5CryptoServiceProvider RentUnsafe()
+    {
+        <span class="synStatement">if</span> (!UseCache || t_md5 == <span class="synConstant">null</span>)
+        {
+            <span class="synStatement">return</span> <span class="synStatement">new</span> MD5CryptoServiceProvider();
+        }
+        <span class="synStatement">else</span>
+        {
+            var md5 = t_md5;
+            t_md5 = <span class="synConstant">null</span>;
+            <span class="synStatement">return</span> md5;
+        }
+    }
+
+    <span class="synComment">/// </span><span class="synIdentifier">&lt;</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span>
+    <span class="synComment">/// MD5 インスタンスをキャッシュに返却します。</span>
+    <span class="synComment">/// ※返却前に内部状態が汚染されたインスタンスを返却しないこと。</span>
+    <span class="synComment">/// </span><span class="synIdentifier">&lt;/</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span>
+    <span class="synType">private</span> <span class="synType">static</span> <span class="synType">void</span> ReturnUnsafe(MD5CryptoServiceProvider md5)
+    {
+        <span class="synStatement">if</span> (UseCache &amp;&amp; t_md5 == <span class="synConstant">null</span> &amp;&amp; md5 != <span class="synConstant">null</span>)
+        {
+            t_md5 = md5;
+        }
+    }
+}
+</pre>
+
+
+        <h2>Utf8Json のカスタムフォーマッタ</h2>
+
+        <p>JSON のフォーマッタを書くときも Span を活用できます。</p>
+
+        <h3>Enum を CamelCase にするフォーマッタ</h3>
+
+        <p>PascalCase な enum メンバを CamelCase でシリアライズしたいことがあって書いてみました。</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synType">public</span> <span class="synType">class</span> CamelCaseEnumFormatter&lt;T&gt; : IJsonFormatter&lt;T&gt;
+    <span class="synStatement">where</span> T : <span class="synType">struct</span>
+{
+    <span class="synType">public</span> <span class="synType">void</span> Serialize(<span class="synStatement">ref</span> JsonWriter writer, T <span class="synStatement">value</span>, IJsonFormatterResolver formatterResolver)
+    {
+        var str = <span class="synStatement">value</span>.ToString();
+        Span&lt;<span class="synType">char</span>&gt; buffer = <span class="synStatement">stackalloc</span> <span class="synType">char</span>[str.Length];
+        str.AsSpan().CopyTo(buffer);
+        buffer[<span class="synConstant">0</span>] = <span class="synType">char</span>.ToLower(buffer[<span class="synConstant">0</span>]);
+        writer.WriteString(buffer.ToString());
+    }
+
+    <span class="synType">public</span> T Deserialize(<span class="synStatement">ref</span> JsonReader reader, IJsonFormatterResolver formatterResolver)
+    {
+        var str = reader.ReadString();
+        <span class="synStatement">return</span> Enum.Parse&lt;T&gt;(str, <span class="synConstant">true</span>);
+    }
+}
+</pre>
+
+
+        <h2>おまけ: StringBuilder</h2>
+
+        <p>これは半分遊びですが、スタック上で複雑な文字列を構築していきたいときのための、StringBuilder の Span 実装です。</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synType">public</span> <span class="synStatement">ref</span> <span class="synType">struct</span> SpanStringBuilder
+{
+    <span class="synType">private</span> Span&lt;<span class="synType">char</span>&gt; _buffer;
+
+    <span class="synType">private</span> <span class="synType">int</span> _index;
+
+    <span class="synType">public</span> SpanStringBuilder(Span&lt;<span class="synType">char</span>&gt; buffer)
+    {
+        _buffer = buffer;
+        _index = <span class="synConstant">0</span>;
+    }
+
+    <span class="synType">public</span> <span class="synType">void</span> Write(ReadOnlySpan&lt;<span class="synType">char</span>&gt; str)
+    {
+        str.CopyTo(_buffer.Slice(_index));
+        _index += str.Length;
+    }
+
+    <span class="synType">public</span> <span class="synType">void</span> WriteLine(ReadOnlySpan&lt;<span class="synType">char</span>&gt; str)
+    {
+        Write(str);
+        Write(Environment.NewLine);
+    }
+
+    <span class="synType">public</span> <span class="synType">void</span> Write(<span class="synType">char</span> c)
+    {
+        _buffer[_index++] = c;
+    }
+
+    <span class="synType">public</span> <span class="synType">void</span> Write(<span class="synType">int</span> <span class="synStatement">value</span>)
+    {
+        <span class="synStatement">if</span> (!<span class="synStatement">value</span>.TryFormat(_buffer.Slice(_index), <span class="synStatement">out</span> var charsWritten))
+        {
+            <span class="synStatement">throw</span> <span class="synStatement">new</span> OutOfMemoryException(<span class="synConstant">&quot;buffer のサイズが足りません&quot;</span>);
+        }
+
+        _index += charsWritten;
+    }
+
+    <span class="synType">public</span> Span&lt;<span class="synType">char</span>&gt; AsSpan() =&gt; _buffer.Slice(<span class="synConstant">0</span>, _index);
+
+    <span class="synType">public</span> <span class="synType">override</span> <span class="synType">string</span> ToString() =&gt; AsSpan().ToString();
+}
+</pre>
+    </div>
+</section>
+</body>
+</html>

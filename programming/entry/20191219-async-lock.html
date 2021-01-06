@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>async な lock をしよう - wipiano.net</title>
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/10.5.0/styles/vs.min.css">
+    <script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/10.5.0/highlight.min.js"></script>
+    <script>hljs.initHighlightingOnLoad();</script>
+</head>
+<body>
+<header>
+    <div class="site-name"><a href="/index.html">wipiano.net</a></div>
+    <div class="menu-item-container">
+        <p><a href="/profile.html">プロフィール</a></p>
+        <p><a href="/math/index.html">数学</a></p>
+        <p><a href="/programming/index.html">プログラミング</a></p>
+        <p><a href="/diary/index.html">雑記</a></p>
+    </div>
+</header>
+<section id="article-body">
+    <h1>async な lock をしよう</h1>
+    <p class="date">2019.12.19</p>
+    <div class="text-container">
+        <p>Qiita から移行</p>
+
+        <p>--</p>
+
+        <p>C# では，非同期なメソッドでは lock が使えません．この記事ではそれでも lock したいときはどうするのっていうお話をします．</p>
+
+        <p>たとえば，こんなふうにダブルチェックロッキングしたいとしますね．</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synComment">// これが複数のスレッドから非同期に呼ばれる</span>
+<span class="synType">private</span> <span class="synType">static</span> async ValueTask 条件満たしたらなんかするAsync()
+{
+    <span class="synStatement">if</span> (条件)
+    {
+        <span class="synStatement">lock</span> (_lockObj)
+        {
+            <span class="synStatement">if</span> (条件)
+            {
+                await なんかすごく重いIOバウンドなやつAsync();
+            }
+        }
+    }
+}
+</pre>
+
+
+        <p>lock ステートメントは非同期メソッド内で使えないので，実際にはこのコードはコンパイルが通りません．
+            じゃあどうしようか，といって，一番ラクな逃げ道は同期にしちゃうことです．カンタンカンタン．</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synComment">// これが複数のスレッドから非同期に呼ばれる</span>
+<span class="synType">private</span> <span class="synType">static</span> <span class="synType">void</span> 条件満たしたらなんかする()
+{
+    <span class="synStatement">if</span> (条件)
+    {
+        <span class="synStatement">lock</span> (_lockObj)
+        {
+            <span class="synStatement">if</span> (条件)
+            {
+                なんかすごく重いIOバウンドなやつAsync().Wait();
+            }
+        }
+    }
+}
+</pre>
+
+
+        <p>Task だって Wait しちゃえばただの同期，これはちゃんと動きます．でもここで「いやなんのための async なんだよ」ってなりますよね． lock したいだけなのに，そのために非同期の恩恵を捨て去る，そんなことやっちゃダメです．</p>
+
+        <p>じゃあ最新技術をこね回して難しいコード書くのかっていうとそんなことはなく，むしろ全く逆で古くからある技術を使います．そう，<strong>セマフォ</strong> です．
+            セマフォっていうと OS の機能で，プロセス間の資源のアクセス制御に使うイメージですが，.NET にはプロセス内で利用するための <code>SemaphoreSlim</code> クラスがあります．
+            セマフォといっても結局待たなきゃいけないでしょって話なんですが， <code>SemaphoreSlim</code> クラスには非同期で待てる <code>WaitAsync()</code> メソッドがあるわけです．
+            これをつかうと完全に非同期な lock が実現できるわけですね．
+            これはもうパターンが固定なので，ちょっと汎用的に <code>AsyncLock</code> なんていうクラスを作っておくとどこでも使えます．
+            やってることもとてもカンタンなので，作り方さえ覚えてしまえばとっさのときにも書けます．</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synComment">/// </span><span class="synIdentifier">&lt;</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span>
+<span class="synComment">/// async な文脈での lock を提供します．</span>
+<span class="synComment">/// Lock 開放のために，必ず処理の完了後に LockAsync が生成した IDisposable を Dispose してください．</span>
+<span class="synComment">/// </span><span class="synIdentifier">&lt;/</span><span class="synStatement">summary</span><span class="synIdentifier">&gt;</span>
+<span class="synType">public</span> <span class="synType">sealed</span> <span class="synType">class</span> AsyncLock
+{
+    <span class="synType">private</span> <span class="synType">readonly</span> SemaphoreSlim _semaphore = <span class="synStatement">new</span> SemaphoreSlim(<span class="synConstant">1</span>, <span class="synConstant">1</span>);
+
+    <span class="synType">public</span> async Task&lt;IDisposable&gt; LockAsync()
+    {
+        await _semaphore.WaitAsync();
+        <span class="synStatement">return</span> <span class="synStatement">new</span> Handler(_semaphore);
+    }
+
+    <span class="synType">private</span> <span class="synType">sealed</span> <span class="synType">class</span> Handler : IDisposable
+    {
+        <span class="synType">private</span> <span class="synType">readonly</span> SemaphoreSlim _semaphore;
+        <span class="synType">private</span> <span class="synType">bool</span> _disposed = <span class="synConstant">false</span>;
+
+        <span class="synType">public</span> Handler(SemaphoreSlim semaphore)
+        {
+            _semaphore = semaphore;
+        }
+
+        <span class="synType">public</span> <span class="synType">void</span> Dispose()
+        {
+            <span class="synStatement">if</span> (!_disposed)
+            {
+                _semaphore.Release();
+                _disposed = <span class="synConstant">true</span>;
+            }
+        }
+    }
+}
+</pre>
+
+
+        <p>面倒な人はこれをコピペでいいです．使うときは， lock 構文の代わりに using 構文を使います．これによって， semaphore の管理を忘れて lock という意味を持たせた見た目のコードを書けます．</p>
+
+        <p>たとえば，最初の例を書いてみるとこんな感じです．</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synType">private</span> <span class="synType">static</span> <span class="synType">readonly</span> s_lock = <span class="synStatement">new</span> AsyncLock();
+<span class="synType">private</span> <span class="synType">static</span> async Task 条件満たしたらなんかするAsync()
+{
+    <span class="synStatement">if</span> (条件)
+    {
+        <span class="synStatement">using</span> (await s_lock.LockAsync())
+        {
+            <span class="synStatement">if</span> (条件)
+            {
+                await なんかすごく重いIOバウンドなやつAsync();
+            }
+        }
+    }
+}
+</pre>
+
+
+        <p>lock が using に変わっただけで，あとはあまり変わりません．でもこれはコンパイルも通るし，ちゃんと非同期でパフォーマンスよく動きます．</p>
+
+        <p>というわけで，いままで <code>.Wait</code> しちゃってた方，今日からは <code>await</code> しましょう！</p>
+    </div>
+</section>
+</body>
+</html>

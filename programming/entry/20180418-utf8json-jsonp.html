@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Utf8Json で JSONP を書く - wipiano.net</title>
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/10.5.0/styles/vs.min.css">
+    <script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/10.5.0/highlight.min.js"></script>
+    <script>hljs.initHighlightingOnLoad();</script>
+</head>
+<body>
+<header>
+    <div class="site-name"><a href="/index.html">wipiano.net</a></div>
+    <div class="menu-item-container">
+        <p><a href="/profile.html">プロフィール</a></p>
+        <p><a href="/math/index.html">数学</a></p>
+        <p><a href="/programming/index.html">プログラミング</a></p>
+        <p><a href="/diary/index.html">雑記</a></p>
+    </div>
+</header>
+<section id="article-body">
+    <h1>Utf8Json で JSONP を書く</h1>
+    <p class="date">2018.04.18</p>
+    <div class="text-container">
+        <p>Utf8Json.<a class="keyword" href="http://d.hatena.ne.jp/keyword/JSONP">JSONP</a> というライブラリを作りました。
+            ざっくりしたライブラリの紹介と、どうやって実装したかのメモです。</p>
+
+        <h2>簡単な紹介</h2>
+
+        <p>nuget でインストールできます。</p>
+
+        <p><a href="https://www.nuget.org/packages/Utf8Json.Jsonp/">NuGet Gallery | Utf8Json.Jsonp 1.1.0</a></p>
+
+        <p>nuget パッケージを入れると、 Utf8Json の<a class="keyword" href="http://d.hatena.ne.jp/keyword/%CC%BE%C1%B0%B6%F5%B4%D6">名前空間</a>に <a class="keyword" href="http://d.hatena.ne.jp/keyword/Jsonp">Jsonp</a> というクラスが追加されます。<br/>
+            これが <a class="keyword" href="http://d.hatena.ne.jp/keyword/JSONP">JSONP</a> 版の JsonSerializer です。</p>
+
+        <p>使いごこちは JsonSerializer と同じになるようにしてあります。
+            QuickStart にも載せたのですが、こんな感じでかけます。</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink>var p = <span class="synStatement">new</span> Person { Age = <span class="synConstant">99</span>, Name = <span class="synConstant">&quot;foobar&quot;</span> };
+var callback = <span class="synConstant">&quot;callbackFunc&quot;</span>;
+
+<span class="synComment">// result: callbackFunc({&quot;Age&quot;:99,&quot;Name&quot;:&quot;foobar&quot;});</span>
+
+<span class="synComment">// obj -&gt; byte[]</span>
+<span class="synType">byte</span>[] bytes = Jsonp.Serialize(callback, p);
+
+<span class="synComment">// write to stream</span>
+<span class="synStatement">using</span> (var stream = <span class="synStatement">new</span> MemoryStream())
+{
+    Jsonp.Serialize(stream, callback, p);
+}
+</pre>
+
+
+        <p>ソースはこちら。</p>
+
+        <p><iframe src="https://hatenablog-parts.com/embed?url=https%3A%2F%2Fgithub.com%2Fwipiano%2FUtf8Json.Jsonp" title="wipiano/Utf8Json.Jsonp" class="embed-card embed-webcard" scrolling="no" frameborder="0" style="display: block; width: 100%; height: 155px; max-width: 500px; margin: 10px 0px;"></iframe><cite class="hatena-citation"><a href="https://github.com/wipiano/Utf8Json.Jsonp">github.com</a></cite></p>
+
+        <h3>対応してないもの</h3>
+
+        <p>とりあえず仕事ですぐに使いたくて週末にざざっと作ったので最低限の機能にしています。 <br/>
+            落ち着いたら対応していく予定です。</p>
+
+        <ul>
+            <li>型なしの<a class="keyword" href="http://d.hatena.ne.jp/keyword/%A5%B7%A5%EA%A5%A2%A5%E9%A5%A4%A5%BA">シリアライズ</a>にまだ対応していません</li>
+            <li><a class="keyword" href="http://d.hatena.ne.jp/keyword/ASP.NET">ASP.NET</a> Core への組み込みもまだです(仕事では webforms だったので。。。。。。。)</li>
+        </ul>
+
+
+        <h2>作った目的</h2>
+
+        <p>ちょうど仕事で Utf8Json への置換えを進めていて、 <a class="keyword" href="http://d.hatena.ne.jp/keyword/JSONP">JSONP</a> に対応してる <a class="keyword" href="http://d.hatena.ne.jp/keyword/API">API</a> どうしよう・・・って考えたのがきっかけです。
+            せっかく Utf8Json で超高速な <a class="keyword" href="http://d.hatena.ne.jp/keyword/JSON">JSON</a> <a class="keyword" href="http://d.hatena.ne.jp/keyword/%A5%B7%A5%EA%A5%A2%A5%E9%A5%A4%A5%BA">シリアライズ</a>ができるのに、 <a class="keyword" href="http://d.hatena.ne.jp/keyword/JSONP">JSONP</a> のために文字列とか byte 配列の結合はやりたくなかった。</p>
+
+        <h2>最初の実装</h2>
+
+        <p>まず Utf8Json 置き換え前のコードはこんな感じでした。 (Utf8Json に比べると) すごく遅そう。</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synType">string</span> json = Newtonsoft.Json.JsonConvert.SerializeObject(obj);
+<span class="synType">string</span> jsonp = <span class="synType">string</span>.Format(<span class="synConstant">&quot;{0}({1})&quot;</span>, callback, obj);
+</pre>
+
+
+        <p>で、 Utf8Json に置き換えて最初にやった実装がだいたいこんなかんじ。</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synComment">// json と callback の文字列をそれぞれ byte[] に変換</span>
+<span class="synType">byte</span>[] jsonBytes = Utf8Json.JsonSerializer.Serialize(obj);
+<span class="synType">byte</span>[] callbackBytes = Encoding.UTF8.GetBytes(callback);
+
+<span class="synComment">// 結果の byte[] を作る</span>
+<span class="synType">int</span> byteCount = jsonBytes.Length + callbackBytes.Length + <span class="synConstant">2</span>;
+var jsonpBytes = <span class="synStatement">new</span> <span class="synType">byte</span>[byteCount];
+
+<span class="synComment">// コピーしていく</span>
+Array.Copy(callbackBytes, <span class="synConstant">0</span>, jsonpBytes, <span class="synConstant">0</span>, callbackBytes.Length);
+jsonpBytes[callbackBytes.Length] = (<span class="synType">byte</span>) <span class="synConstant">'('</span>;
+Array.Copy(jsonBytes, <span class="synConstant">0</span>, jsonpBytes, callbackBytes.Length + <span class="synConstant">1</span>, jsonBytes.Length);
+jsonpBytes[byteCount - <span class="synConstant">1</span>] = (<span class="synType">byte</span>) <span class="synConstant">')'</span>;
+</pre>
+
+
+        <p>Utf8Json を使っているのでなんとなく速そうに見えますが、 <code>byte[]</code> を 3 つもつくっています。そしてこのあとさらに stream に書き込んだりするのです。これは遅い。<br/>
+            utf8json の SerializeUnsafe() を使えば多少は良くなりそうですがそれにしても完璧ではなさそうです。</p>
+
+        <h2>Utf8Json の primitive <a class="keyword" href="http://d.hatena.ne.jp/keyword/API">API</a></h2>
+
+        <p>配列のコピーをなくして、そのまま <a class="keyword" href="http://d.hatena.ne.jp/keyword/JSONP">JSONP</a> の形になっている byte[] がとれればいちばんよいです。<br/>
+            で、それをやるには Primitive <a class="keyword" href="http://d.hatena.ne.jp/keyword/API">API</a> として公開されている <code>JsonWriter</code> を使って、 シ<a class="keyword" href="http://d.hatena.ne.jp/keyword/%A5%EA%A5%A2%A5%E9">リアラ</a>イザが内部で持っているバッファに直接書き込んじゃうのが簡単そうでした。</p>
+
+        <p>単純にやればとても簡単で、まずやったのはこんな実装でした。
+            v1.0.0 の実装はこれです。</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synType">public</span> <span class="synType">static</span> <span class="synType">byte</span>[] Serialize&lt;T&gt;(<span class="synType">string</span> callback, T <span class="synStatement">value</span>, IJsonFormatterResolver resolver)
+{
+    <span class="synComment">// MemoryPool, BufferPool は自分で用意する必要があった</span>
+    var writer = <span class="synStatement">new</span> JsonWriter(MemoryPool.GetBuffer());
+
+    <span class="synComment">// callback の文字列と ( を書く</span>
+    writer.WriteRaw(Encoding.UTF8.GetBytes(callback));
+    writer.WriteRaw((<span class="synType">byte</span>) <span class="synConstant">'('</span>);
+
+    <span class="synComment">// Utf8Json の API をつかって json を書く</span>
+    Utf8Json.JsonSerializer.Serialize(<span class="synStatement">ref</span> writer, <span class="synStatement">value</span>, resolver);
+
+    <span class="synComment">// ) を書く</span>
+    writer.WriteRaw((<span class="synType">byte</span>) <span class="synConstant">')'</span>);
+
+    <span class="synStatement">return</span> writer.ToUtf8ByteArray();
+}
+</pre>
+
+
+        <h2>callback 文字列の<a class="keyword" href="http://d.hatena.ne.jp/keyword/%A5%B7%A5%EA%A5%A2%A5%E9%A5%A4%A5%BA">シリアライズ</a>での配列確保を避ける</h2>
+
+        <p>これで満足していたのですが、さっきのコードのこの部分</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synComment">// callback の文字列と ( を書く</span>
+writer.WriteRaw(Encoding.UTF8.GetBytes(callback));
+</pre>
+
+
+        <p>これが気になりはじめました。<br/>
+            これだと <code>callback</code> を <code>byte[]</code> に変換するためだけに新しく配列を作ってしまいますし、それを JsonWriter 内部の配列にコピーしないといけません。<br/>
+            最初の実装とそこまで違うの？という感じです。</p>
+
+        <p>で、 <code>GetBytes()</code> には任意の配列に書ける<a class="keyword" href="http://d.hatena.ne.jp/keyword/%A5%AA%A1%BC%A5%D0%A1%BC%A5%ED%A1%BC%A5%C9">オーバーロード</a>があるのでそれを使ってこんなふうにしました。
+            すこし無理やりな実装ですが、これで配列が作られるのを防ぎます。</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synType">public</span> <span class="synType">static</span> <span class="synType">byte</span>[] Serialize&lt;T&gt;(<span class="synType">string</span> callback, T <span class="synStatement">value</span>, IJsonFormatterResolver resolver)
+{
+    <span class="synComment">// MemoryPool, BufferPool は自分で用意する必要があった</span>
+    var writer = <span class="synStatement">new</span> JsonWriter(MemoryPool.GetBuffer());
+
+    <span class="synComment">// writer の内部バッファを取得する</span>
+    ArraySegment&lt;<span class="synType">byte</span>&gt; buffer = writer.GetBuffer();
+
+    <span class="synComment">// バッファに callback の文字列を書いて、その分だけバッファの現在位置を進めてあげる</span>
+    <span class="synComment">// ここがずれると大変なので、渡すのが byte[] でいい時は WriteRaw() とかをつかうのが良さそう。</span>
+    var filledCount = Encoding.UTF8.GetBytes(callback, <span class="synConstant">0</span>, callback.Length, buffer.Array, buffer.Count);
+    writer.AdvanceOffset(filledCount);
+
+    writer.WriteRaw((<span class="synType">byte</span>) <span class="synConstant">'('</span>);
+
+    <span class="synComment">// ( を書く</span>
+    writer.WriteRaw((<span class="synType">byte</span>) <span class="synConstant">'('</span>);
+
+    <span class="synComment">// Utf8Json の API をつかって json を書く</span>
+    Utf8Json.JsonSerializer.Serialize(<span class="synStatement">ref</span> writer, <span class="synStatement">value</span>, resolver);
+
+    <span class="synComment">// ) を書く</span>
+    writer.WriteRaw((<span class="synType">byte</span>) <span class="synConstant">')'</span>);
+
+    <span class="synStatement">return</span> writer.ToUtf8ByteArray();
+}
+</pre>
+
+
+        <p>簡単な<a class="keyword" href="http://d.hatena.ne.jp/keyword/%A5%D9%A5%F3%A5%C1%A5%DE%A1%BC%A5%AF">ベンチマーク</a>をとってみたらかなり速くなってました。</p>
+
+        <table>
+            <thead>
+            <tr>
+                <th>     Method </th>
+                <th style="text-align:right;">     Mean </th>
+                <th style="text-align:right;">    Error </th>
+                <th style="text-align:right;">   StdDev </th>
+                <th style="text-align:right;">  Gen 0 </th>
+                <th style="text-align:right;"> Allocated </th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr>
+                <td> OldVersion </td>
+                <td style="text-align:right;"> 205.1 ns </td>
+                <td style="text-align:right;"> 3.017 ns </td>
+                <td style="text-align:right;"> 3.816 ns </td>
+                <td style="text-align:right;"> 0.0608 </td>
+                <td style="text-align:right;">      96 B </td>
+            </tr>
+            <tr>
+                <td> NewVersion </td>
+                <td style="text-align:right;"> 159.0 ns </td>
+                <td style="text-align:right;"> 2.347 ns </td>
+                <td style="text-align:right;"> 2.196 ns </td>
+                <td style="text-align:right;"> 0.0405 </td>
+                <td style="text-align:right;">      64 B </td>
+            </tr>
+            </tbody>
+        </table>
+
+
+        <h2>おまけ: SerializeUnsafe について</h2>
+
+        <p>Utf8Json の <a class="keyword" href="http://d.hatena.ne.jp/keyword/API">API</a> に <code>SerializeUnsafe()</code> というメソッドがあります。 (もちろん <a class="keyword" href="http://d.hatena.ne.jp/keyword/Jsonp">Jsonp</a> でもサポートしてます)<br/>
+            このメソッドは何が unsafe かというと、スレッドごとに一個しかない<a class="keyword" href="http://d.hatena.ne.jp/keyword/%A5%B7%A5%EA%A5%A2%A5%E9%A5%A4%A5%BA">シリアライズ</a>用のバッファをそのまま返してきます。<br/>
+            つまり、結果を受け取ったらすぐに使ってしまわないと、他のオブジェクトを<a class="keyword" href="http://d.hatena.ne.jp/keyword/%A5%B7%A5%EA%A5%A2%A5%E9%A5%A4%A5%BA">シリアライズ</a>した場合に書き換えられてしまう可能性があるということです。<br/>
+            unsafe でない <a class="keyword" href="http://d.hatena.ne.jp/keyword/API">API</a> はこれを避けるために、新しく <code>byte[]</code> を作って返してくれます。</p>
+
+        <h4>どんなときに使うと良いか</h4>
+
+        <p>たとえば結果をすぐに使って捨ててしまう場合 (たとえば stream に書くとか) の場合は <code>SerializeUnsafe()</code> をつかったほうがお得です。 <br/>
+            逆に結果を引き回したり、スレッドをまたいで共有したり、複数のオブジェクトを<a class="keyword" href="http://d.hatena.ne.jp/keyword/%A5%B7%A5%EA%A5%A2%A5%E9%A5%A4%A5%BA">シリアライズ</a>してあとでまとめて何かする、という時には使えません。</p>
+
+        <p>実際、今回も stream に書き込みをする <a class="keyword" href="http://d.hatena.ne.jp/keyword/API">API</a> はこんな感じで実装していますが、これで安全に速く動きます。<br/>
+            この <a class="keyword" href="http://d.hatena.ne.jp/keyword/API">API</a> は本家の Utf8Json にもあるものなので、stream に書いてしまう場合はこれを呼んでもらえれば大丈夫だと思います。</p>
+
+        <pre class="code lang-cs" data-lang="cs" data-unlink><span class="synType">public</span> <span class="synType">static</span> <span class="synType">void</span> Serialize&lt;T&gt;(Stream stream, <span class="synType">string</span> callback, T <span class="synStatement">value</span>, IJsonFormatterResolver resolver)
+{
+    var buffer = SerializeUnsafe(callback, <span class="synStatement">value</span>, resolver);
+    stream.Write(buffer.Array, buffer.Offset, buffer.Count);
+}
+</pre>
+    </div>
+</section>
+</body>
+</html>
