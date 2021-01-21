@@ -210,3 +210,58 @@ header .menu-item-container p {
     margin-bottom: 3em;
 }
 
+.keyword {
+    font-weight: 600;
+}
+
+.definition, .theorem, .axiom, .lemma, .proposition, .corollary, .example, .problem, .remark {
+    position: relative;
+    margin: 2em auto;
+    padding: 1.2em;
+    /*color: #555555;*/ /* 文章色 */
+    /*background-color: #f7f7f7;*/ /* 背景色 */
+    border: 1px solid #555555; /* 枠線の太さ・色 */
+    width: 90%;
+}
+
+.title-theorem, .title-definition, .title-axiom, .title-lemma, .title-proposition, .title-corollary, .title-example, .title-problem, .title-remark {
+    position: absolute;
+    padding: 0 .5em;
+    left: 20px;
+    top: -15px;
+    font-weight: bold;
+    background-color: azure; /* タイトル背景色 */
+    /*color: #555555*/; /* タイトル文字色 */
+}
+
+.title-definition:before {
+    content: "定義: "
+}
+
+.title-theorem:before {
+    content: "定理: "
+}
+
+.title-axiom:before {
+    content: "公理: "
+}
+
+.title-lemma:before {
+    content: "補題: "
+}
+
+.title-proposition:before {
+    content: "命題: "
+}
+
+.title-example:before {
+    content: "例: "
+}
+
+.title-problem:before {
+    content: "問題: "
+}
+
+.title-remark:before {
+    content: "注: "
+}
