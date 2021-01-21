@@ -265,3 +265,7 @@ header .menu-item-container p {
 .title-remark:before {
     content: "注: "
 }
+
+.log > li {
+    padding-bottom: 1em;
+}
