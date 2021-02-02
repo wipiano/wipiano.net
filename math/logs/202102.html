@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>勉強ログ 2021.02 - wipiano.net</title>
+    <link rel="stylesheet" href="/style.css" />
+
+    <!-- syntax highlight -->
+    <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/10.5.0/styles/vs.min.css">
+    <script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/10.5.0/highlight.min.js"></script>
+    <script>hljs.initHighlightingOnLoad();</script>
+
+    <!-- MathJax -->
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script async src="/js/load-mathjax.js"></script>
+    <!-- Global site tag (gtag.js) - Google Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-3BPE5LX24R"></script>
+    <script>
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){dataLayer.push(arguments);}
+        gtag('js', new Date());
+
+        gtag('config', 'G-3BPE5LX24R');
+    </script>
+</head>
+<body>
+<header>
+    <div class="site-name"><a href="/index.html">wipiano.net</a></div>
+    <div class="menu-item-container">
+        <p><a href="/profile.html">プロフィール</a></p>
+        <p><a href="/math/index.html">数学</a></p>
+        <p><a href="/programming/index.html">プログラミング</a></p>
+        <p><a href="/diary/index.html">雑記</a></p>
+    </div>
+</header>
+<section id="article-body">
+    <h1>2021.02 勉強ログ</h1>
+    <h2>2021.02.02 (月)</h2>
+    <div class="text-container">
+        <p>引き続き松坂『集合・位相入門』を読む．週末から少しサボり気味であった．</p>
+        <ul>
+            <li>§3.対応，写像を読んでいく．</li>
+            <li>A) 2つの集合の直積 ここは単に直積の定義であるから難しくない．</li>
+            <li>p.23 に出てくる「Descartes 座標」はデカルト座標 = 直行座標．デカルトってこう書くんだ．．．</li>
+            <li>B) 対応の概念
+                <p>集合 $A,B$， 規則 $\Gamma$ について，対応を次のように定義する．</p>
+                <div class="definition">
+                    <p class="title-definition">対応</p>
+                    <p>
+                        各 $a\in A$ に対して，規則 $\Gamma$ によって，それぞれ $B$ の部分集合 $\Gamma (a)$ が定められるとき，
+                        規則 $\Gamma$ を $A$ から $B$ への <span class="keyword">対応</span> という．
+                        また，$B$ の部分集合 $\Gamma (a)$ を $a$ の $\Gamma$ による <span class="keyword">像</span> といい，
+                        $A$ を対応 $\Gamma$ の <span class="keyword">始集合</span>，$B$ を対応 $\Gamma$ の <span class="keyword">終集合</span> という．
+                    </p>
+                </div>
+                $\Gamma : A \rightarrow B$ または $A \xrightarrow{\Gamma} B$ は， $\Gamma$ が $A$ から $B$ への対応であることを表す．
+                <div class="definition">
+                    <p class="title-definition">対応の相等</p>
+                    <p>
+                        $\Gamma$, $\Gamma^{\prime}$ がいずれも $A$ から $B$ への対応で， $\forall a \in A, \Gamma (a) = \Gamma^{\prime} (a)$ が成り立つとき，
+                        $\Gamma$ と $\Gamma^{\prime}$ は等しい といい， $\Gamma = \Gamma^{\prime}$ とかく．
+                    </p>
+                </div>
+            </li>
+        </ul>
+    </div>
+</section>
+</body>
+</html>
