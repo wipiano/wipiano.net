@@ -26,7 +26,7 @@ a {
 }
 
 body {
-    background-color: azure;
+    background-color: white;
     margin: 0 auto;
     max-width: 800px;
 }
@@ -113,7 +113,8 @@ header .menu-item-container {
 
 header .menu-item-container p {
     padding: 0.5em;
-    background: #e0ffff;
+    background: white;
+    border: 1px solid #d0d0d0;
     margin-left: 0.2em;
     margin-right: 0.2em;
 }
@@ -202,6 +203,7 @@ header .menu-item-container p {
 
 #profile-image {
     width: 150px;
+    height: 150px;
 }
 
 /* 記事ページ */
@@ -225,7 +227,7 @@ header .menu-item-container p {
     margin: 2em auto;
     padding: 1.2em;
     /*color: #555555;*/ /* 文章色 */
-    /*background-color: #f7f7f7;*/ /* 背景色 */
+    background-color: antiquewhite;
     border: 1px solid #555555; /* 枠線の太さ・色 */
     width: 90%;
 }
@@ -236,7 +238,7 @@ header .menu-item-container p {
     left: 20px;
     top: -15px;
     font-weight: bold;
-    background-color: azure; /* タイトル背景色 */
+    background-color: white; /* タイトル背景色 */
     /*color: #555555*/; /* タイトル文字色 */
 }
 
