@@ -239,6 +239,7 @@ header .menu-item-container p {
     top: -15px;
     font-weight: bold;
     background-color: white; /* タイトル背景色 */
+    border: 1px solid #999999;
     /*color: #555555*/; /* タイトル文字色 */
 }
 

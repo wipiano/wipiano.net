@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>チェザロ平均の極限について - wipiano.net</title>
+    <link rel="stylesheet" href="/style.css" />
+
+    <!-- syntax highlight -->
+    <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/10.5.0/styles/vs.min.css">
+    <script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/10.5.0/highlight.min.js"></script>
+    <script>hljs.initHighlightingOnLoad();</script>
+
+    <!-- MathJax -->
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script async src="/js/load-mathjax.js"></script>
+    <!-- Global site tag (gtag.js) - Google Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-3BPE5LX24R"></script>
+    <script>
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){dataLayer.push(arguments);}
+        gtag('js', new Date());
+
+        gtag('config', 'G-3BPE5LX24R');
+    </script>
+</head>
+<body>
+<header>
+    <div class="site-name"><a href="/index.html">wipiano.net</a></div>
+    <div class="menu-item-container">
+        <p><a href="/profile.html">プロフィール</a></p>
+        <p><a href="/math/index.html">数学</a></p>
+        <p><a href="/programming/index.html">プログラミング</a></p>
+        <p><a href="/diary/index.html">雑記</a></p>
+    </div>
+</header>
+<section id="article-body">
+    <h1>チェザロ平均の極限について</h1>
+    <p class="date">2021.02.16</p>
+    <div class="text-container">
+        <p>
+            先月から，復習として杉浦『解析入門I』を読んでいる．
+            やはり $\epsilon - N$ 論法がしっかりと身についていないようで，単純な数列に対しては解けるが，すこし複雑なものになると面食らってしまう．
+            証明の流れを身につけるために，チェザロ平均の極限について整理してみる．
+        </p>
+        <p>まずはチェザロ平均の定義から．</p>
+        <div class="definition">
+            <p class="title-definition">チェザロ平均</p>
+            数列 $(a_n)_{n\in\mathbb{N}}$ に対して，最初の $n$ 個の項の平均
+            $$\frac{a_1 + a_2 + \dots + a_n}{n}$$
+            を数列 $(a_n)_{n\in\mathbb{N}}$ のチェザロ平均という．
+        </div>
+        <p>このチェザロ平均は，極限について次の興味深い性質を持つ．これはどの解析学の教科書にも載っているような有名な性質らしい．</p>
+        <div class="proposition">
+            <p class="title-proposition">チェザロ平均の極限</p>
+            $\lim_{n \to \infinity} a_n = a$ が存在するとき，
+            $$\lim_{n \to \infinity} $\frac{a_1 + a_2 + \dots + a_n}{n} = a$$
+        </div>
+        <p>
+            つまり，ある数列について， $n$ に対するチェザロ平均を第 $n$ 項とする数列の極限と，もとの数列の極限が一致するということである．
+            Wikipedia では，このことを「チェザロ平均を取る操作は，数列の収束性とその極限を保存する」と書かれている．
+        </p>
+        <p>ではこれを数列の極限の定義にもとづいて証明してみよう．まず，数列の極限の定義を思い出そう．</p>
+        <div class="definition">
+            <p class="title-definition">数列の極限</p>
+            数列 $(a_n)_{n\in\mathbb{N}}$ について，
+            $$(\forall \epsilon > 0)(\exists n_0 \in \mathbb{N})(\forall n \in \mathbb{N})(n \geq n_0 \Rightarrow |a - a_n| \lt \epsilon)$$
+            が成り立つとき， $(a_n)_{n\in\mathbb{N}}$ は $a$ に収束するといい， $a$ を $(a_n)_{n\in\mathbb{N}}$ の極限という．
+        </div>
+        <p>
+            この定義にもとづいてこの命題を示すには，任意の$\epsilon > 0$に対して，ある自然数 $n_0$ が存在し， $n \geq n_0$ ならば，
+            $$|a - \frac{a_1 + a_2 + \dots + a_n}{n}| < \epsilon$$
+            であることを示せば良い．
+            このためには，まず
+        </p>
+    </div>
+</section>
+</body>
+</html>
